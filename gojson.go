@@ -3,6 +3,7 @@ package gojson
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"unicode/utf8"
 )
 
@@ -11,14 +12,24 @@ import (
 type JsonType int
 
 const (
-	String JsonType = iota
-	Number
-	Object
-	Array
+	TypeString JsonType = iota
+	TypeNumber
+	TypeObject
+	TypeArray
+	TypeExp
+	TypeSign
+	TypeDigits
+	TypeInt
+	TypeWhitespace
 )
 
-type node struct {
-	parent *node
+type Node struct {
+	Type     JsonType
+	Parent   *Node
+	Children []*Node
+
+	b []byte // underlying data
+	// Value  fmt.Stringer
 }
 
 func ParseJSON(b []byte) ([]byte, int, error) {
@@ -308,90 +319,141 @@ func ParseNumber(b []byte) ([]byte, int, error) {
 	return b[:c], c, nil
 }
 
-func ParseInt(b []byte) ([]byte, int, error) {
+type Int struct{ Node }
+
+func (i *Int) Int() int64 {
+	ret, err := strconv.ParseInt(string(i.b), 10, 64)
+	if err != nil {
+		// then we did not parse digits correctly
+		panic(err) // or better safe then sorry?... return 0
+		// todo how do return message that makes sense, when you ParsedDigits you got an error that you ignored
+	}
+	return ret
+}
+
+func ParseInt(b []byte) (*Int, int, error) {
 	// int
 	//     digit
 	//     onenine digits
 	//     '-' digit
 	//     '-' onenine digits
 
+	ret := &Int{Node: Node{
+		Type:   TypeInt,
+		Parent: nil, // todo
+
+	}}
+
 	if len(b) == 0 {
-		return nil, 0, fmt.Errorf("nothing to parse")
+		return ret, 0, fmt.Errorf("nothing to parse")
 	}
 
 	if b[0] == '0' {
-		return b[:1], 1, nil // digit
+		ret.b = b[:1]
+		return ret, 1, nil // digit
 	}
 
 	if IsOneNine(b[0]) {
 		_, consumed, err := ParseDigits(b)
 		if err != nil {
-			return b[:1], 1, nil // digit
+			ret.b = b[:1]
+			return ret, 1, nil // digit
 		}
-		return b[:consumed], consumed, nil // onenine digits
+		ret.b = b[:consumed]      //todo use c not consumed
+		return ret, consumed, nil // onenine digits
 	}
 
 	if b[0] != '-' {
-		return nil, 0, fmt.Errorf("unexpected char")
+		return ret, 0, fmt.Errorf("unexpected char")
 	}
 
 	if len(b) > 1 && b[1] == '-' {
-		return nil, 0, fmt.Errorf("unexpected char")
+		return ret, 0, fmt.Errorf("unexpected char")
 	}
 
 	_, consumed, err := ParseInt(b[1:])
 	if err != nil {
-		return nil, 0, err
+		return ret, 0, err
 	}
 
 	consumed += 1 // the negative
 
-	return b[0:consumed], consumed, nil
+	ret.b = b[:consumed]
+	return ret, consumed, nil
 }
 
-func ParseExp(b []byte) ([]byte, int) {
+type Exp struct {
+	Node
+	sign *Sign
+	// TODO Digits
+}
+
+// todo this is sign of the exponent not the number
+func (e *Exp) Positive() bool { return e.sign == nil || e.sign.Positive() }
+
+func ParseExp(b []byte) (*Exp, int) {
 
 	// exp
 	//     ""
 	//     'E' sign digits
 	//     'e' sign digits
 
+	ret := &Exp{
+		Node: Node{
+			Type:   TypeExp,
+			Parent: nil, // todo
+
+		},
+	}
+
 	if len(b) == 0 ||
 		(b[0] != 'e' && b[0] != 'E') {
-		return nil, 0
+		return ret, 0
 	}
 
 	c := 1 // we've [c]onsumed 'e'
-	_, consumed := ParseSign(b[c:])
+	sign, consumed := ParseSign(b[c:])
+	ret.sign = sign // todo why can't i do ret.Sign, consumed := ParseSign(b[c:])
 
 	if consumed == 0 {
-		return nil, 0
+		return ret, 0
 	}
 	c += consumed
 
 	_, consumed, err := ParseDigits(b[c:])
 	if err != nil {
-		return nil, 0
+		return ret, 0
 	}
 	c += consumed
 
-	return b[0:c], c
+	ret.b = b[0:c]
+	return ret, c
 }
 
 // todo rename parse functions to consume and create interface{} Consumer... easier to test
+type Sign struct{ Node }
 
-func ParseSign(b []byte) ([]byte, int) {
+func (s *Sign) Positive() bool { return len(s.b) != 1 || s.b[0] == '+' }
+
+func ParseSign(b []byte) (*Sign, int) {
 	// sign
 	//     ""
 	//     '+'
 	//     '-'
 
+	ret := &Sign{Node: Node{
+		Type:   TypeSign,
+		Parent: nil, // todo
+	}}
+
 	if len(b) == 0 ||
 		(b[0] != '+' && b[0] != '-') {
-		return nil, 0
+		return ret, 0
 	}
 
-	return b[:1], 1
+	ret.b = b[:1]
+
+	return ret, 1
 }
 
 func ParseFrac(b []byte) ([]byte, int) {
@@ -425,6 +487,7 @@ func IsOneNine(c byte) bool {
 	//     '1' . '9'
 	return c >= '1' && c <= '9'
 }
+
 func ParseCharacters(b []byte) ([]byte, int) {
 	// characters
 	//     ""
@@ -523,13 +586,21 @@ SWITCH:
 
 	return nil, 0, fmt.Errorf("Invalid escape")
 }
-func ParseWhitespace(b []byte) ([]byte, int) {
+
+type Whitespace struct{ Node }
+
+func ParseWhitespace(b []byte) (*Whitespace, int) {
 	// ws
 	//     ""
 	//     '0009' ws
 	//     '000a' ws
 	//     '000d' ws
 	//     '0020' ws
+
+	ret := &Whitespace{Node: Node{
+		Type:   TypeWhitespace,
+		Parent: nil, // todo
+	}}
 
 	var n int
 
@@ -547,24 +618,44 @@ FOR:
 	// TODO for range loop doesn't incrememnt on the last loop?
 	// for i, ws := range b{} if len(b)== 10 then i should be 10?
 
-	return b[:n], n
+	ret.b = b[:n]
+	return ret, n
+}
+
+// [wip] Digits satisfies the json.org language spec for both digit and digits
+
+type Digits struct{ Node }
+
+func (d *Digits) Int() uint64 {
+	ret, err := strconv.ParseUint(string(d.b), 10, 64)
+	if err != nil {
+		// then we did not parse digits correctly
+		panic(err) // or better safe then sorry?... return 0
+		// todo how do return message that makes sense, when you ParsedDigits you got an error that you ignored
+	}
+	return ret
 }
 
 //  ParseDigits returns b[0:x] such that every ascii value from b[0]
 //  to b[x] represents a digit from 0 to 9, along with the length of b[0:x]
-func ParseDigits(b []byte) ([]byte, int, error) {
+func ParseDigits(b []byte) (*Digits, int, error) {
 
 	// digits
 	//     digit
 	//     digit digits
 
+	ret := &Digits{Node: Node{
+		Type:   TypeDigits,
+		Parent: nil, // todo
+	}}
+
 	if len(b) == 0 {
-		return nil, 0, fmt.Errorf("nothing to parse")
+		return ret, 0, fmt.Errorf("nothing to parse")
 	}
 
 	// check first digit
 	if !IsDigit(b[0]) {
-		return nil, 0, fmt.Errorf("first byte must be a digit")
+		return ret, 0, fmt.Errorf("first byte must be a digit")
 	}
 
 	// consume as many digits as possible
@@ -572,11 +663,13 @@ func ParseDigits(b []byte) ([]byte, int, error) {
 		if IsDigit(d) {
 			continue
 		}
-		return b[0:i], i, nil
+		ret.b = b[0:i]
+		return ret, i, nil
 	}
 
 	// we've consumed everything we return the whole slice back
-	return b, len(b), nil
+	ret.b = b
+	return ret, len(b), nil
 }
 
 func IsHex(b byte) bool {

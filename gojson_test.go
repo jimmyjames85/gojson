@@ -1,9 +1,9 @@
 package gojson
 
+// run with GOCACHE=off  go test ./...
+
 import (
 	"testing"
-
-	"github.com/jimmyjames85/gojson"
 )
 
 type testCase struct {
@@ -51,15 +51,15 @@ func TestParseSign(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			actual, actualLen := gojson.ParseSign(tc.input)
+			actual, actualLen := ParseSign(tc.input)
 
 			if len(tc.expected) != actualLen {
 				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
 			}
 
-			// byte.Compare
-			if string(tc.expected) != string(actual) {
-				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			// TODO byte.Compare
+			if string(tc.expected) != string(actual.b) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual.b))
 			}
 		})
 	}
@@ -101,16 +101,16 @@ func TestParseWhitespace(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			//t.Parallel()
-			actual, actualLen := gojson.ParseWhitespace(tc.input)
+
+			actual, actualLen := ParseWhitespace(tc.input)
 
 			if len(tc.expected) != actualLen {
 				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
 			}
 
 			// byte.Compare
-			if string(tc.expected) != string(actual) {
-				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			if string(tc.expected) != string(actual.b) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual.b))
 			}
 		})
 	}
@@ -143,7 +143,7 @@ func TestParseDigits(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			//t.Parallel()
-			actual, actualLen, err := gojson.ParseDigits(tc.input)
+			actual, actualLen, err := ParseDigits(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -156,8 +156,8 @@ func TestParseDigits(t *testing.T) {
 			}
 
 			// byte.Compare
-			if string(tc.expected) != string(actual) {
-				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			if string(tc.expected) != string(actual.b) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual.b))
 			}
 		})
 	}
@@ -216,15 +216,15 @@ func TestParseExp(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			//t.Parallel()
-			actual, actualLen := gojson.ParseExp(tc.input)
+			actual, actualLen := ParseExp(tc.input)
 
 			if len(tc.expected) != actualLen {
 				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
 			}
 
 			// byte.Compare
-			if string(tc.expected) != string(actual) {
-				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			if string(tc.expected) != string(actual.b) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual.b))
 			}
 		})
 	}
@@ -272,7 +272,7 @@ func TestParseFrac(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen := gojson.ParseFrac(tc.input)
+			actual, actualLen := ParseFrac(tc.input)
 
 			if len(tc.expected) != actualLen {
 				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
@@ -344,7 +344,7 @@ func TestParseInt(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseInt(tc.input)
+			actual, actualLen, err := ParseInt(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -357,8 +357,8 @@ func TestParseInt(t *testing.T) {
 			}
 
 			// byte.Compare
-			if string(tc.expected) != string(actual) {
-				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			if string(tc.expected) != string(actual.b) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual.b))
 			}
 		})
 	}
@@ -452,7 +452,7 @@ func TestParseNumber(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseNumber(tc.input)
+			actual, actualLen, err := ParseNumber(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -551,7 +551,7 @@ func TestParseEscape(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseEscape(tc.input)
+			actual, actualLen, err := ParseEscape(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -628,7 +628,7 @@ func TestParseCharacter(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseCharacter(tc.input)
+			actual, actualLen, err := ParseCharacter(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -695,7 +695,7 @@ func TestParseCharacters(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen := gojson.ParseCharacters(tc.input)
+			actual, actualLen := ParseCharacters(tc.input)
 
 			if len(tc.expected) != actualLen {
 				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
@@ -762,7 +762,7 @@ func TestParseString(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseString(tc.input)
+			actual, actualLen, err := ParseString(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -825,7 +825,7 @@ func TestParseElement(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseElement(tc.input)
+			actual, actualLen, err := ParseElement(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -893,7 +893,7 @@ func TestParseElements(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseElements(tc.input)
+			actual, actualLen, err := ParseElements(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -972,7 +972,7 @@ func TestParseArray(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseArray(tc.input)
+			actual, actualLen, err := ParseArray(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -1051,7 +1051,7 @@ func TestParseMember(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseMember(tc.input)
+			actual, actualLen, err := ParseMember(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -1124,7 +1124,7 @@ func TestParseMembers(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseMembers(tc.input)
+			actual, actualLen, err := ParseMembers(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -1216,7 +1216,7 @@ func TestParseObject(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseObject(tc.input)
+			actual, actualLen, err := ParseObject(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
