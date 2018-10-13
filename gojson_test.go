@@ -1,7 +1,5 @@
 package gojson
 
-// run with GOCACHE=off  go test ./...
-
 import (
 	"testing"
 )
@@ -283,7 +281,6 @@ func TestParseFrac(t *testing.T) {
 				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual.b))
 			}
 		})
-
 	}
 }
 
