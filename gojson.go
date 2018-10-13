@@ -15,6 +15,7 @@ const (
 	TypeString JsonType = iota
 	TypeNumber
 	TypeObject
+	TypeFrac
 	TypeArray
 	TypeExp
 	TypeSign
@@ -456,23 +457,47 @@ func ParseSign(b []byte) (*Sign, int) {
 	return ret, 1
 }
 
-func ParseFrac(b []byte) ([]byte, int) {
+type Frac struct{ Node }
+
+func (f *Frac) Float64() float64 {
+	// ParseFrac doesn't return error but can return b=empty string
+	// so this should return 0 for the fraction part
+	if len(f.b) == 0 {
+		return float64(0)
+	}
+
+	ret, err := strconv.ParseFloat(string(f.b), 64)
+	if err != nil {
+		// then we did not parse float correctly
+		panic(err)
+	}
+
+	return ret
+}
+
+func ParseFrac(b []byte) (*Frac, int) {
 	// frac
 	//     ""
 	//     '.' digits
 
+	ret := &Frac{Node: Node{
+		Type:   TypeFrac,
+		Parent: nil, // todo
+	}}
+
 	if len(b) == 0 || b[0] != '.' {
-		return nil, 0
+		return ret, 0
 	}
 	c := 1 // we've consumed the '.'
 
 	_, consumed, err := ParseDigits(b[c:]) // TODO: think: don't return []byte, just return how much ParseDigit consumed
 	if err != nil {
-		return nil, 0
+		return ret, 0
 	}
 
 	c += consumed
-	return b[0:c], c
+	ret.b = b[0:c]
+	return ret, c
 }
 
 func IsDigit(c byte) bool {
