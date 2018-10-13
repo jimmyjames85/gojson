@@ -132,6 +132,7 @@ func ParseDigits(b []byte) ([]byte, int, error) {
 	}
 	return nil, 0, fmt.Errorf("expecting something but what?")
 }
+
 func ParseInt(b []byte) ([]byte, int, error) {
 	// int
 	//     digit
