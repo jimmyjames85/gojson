@@ -1,7 +1,10 @@
 package gojson
 
-import "fmt"
-import "bytes"
+import (
+	"fmt"
+	"os"
+	"unicode/utf8"
+)
 
 // https://www.json.org/
 
@@ -30,6 +33,65 @@ func parseArray() {}
 
 // NOTE if empty string satisfies a json type then an error should not
 // be returned
+func ParseNumber(b []byte) ([]byte, int, error) {
+	// number
+	//     int frac exp
+
+	_, consumed, err := ParseInt(b)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	c := consumed
+	_, consumed = ParseFrac(b[c:])
+	c += consumed
+
+	_, consumed = ParseExp(b[c:])
+	c += consumed
+
+	return b[:c], c, nil
+}
+
+func ParseInt(b []byte) ([]byte, int, error) {
+	// int
+	//     digit
+	//     onenine digits
+	//     '-' digit
+	//     '-' onenine digits
+
+	if len(b) == 0 {
+		return nil, 0, fmt.Errorf("nothing to parse")
+	}
+
+	if b[0] == '0' {
+		return b[:1], 1, nil // digit
+	}
+
+	if IsOneNine(b[0]) {
+		_, consumed, err := ParseDigits(b)
+		if err != nil {
+			return b[:1], 1, nil // digit
+		}
+		return b[:consumed], consumed, nil // onenine digits
+	}
+
+	if b[0] != '-' {
+		return nil, 0, fmt.Errorf("unexpected char")
+	}
+
+	if len(b) > 1 && b[1] == '-' {
+		return nil, 0, fmt.Errorf("unexpected char")
+	}
+
+	_, consumed, err := ParseInt(b[1:])
+	if err != nil {
+		return nil, 0, err
+	}
+
+	consumed += 1 // the negative
+
+	return b[0:consumed], consumed, nil
+}
 
 func ParseExp(b []byte) ([]byte, int) {
 
@@ -38,61 +100,42 @@ func ParseExp(b []byte) ([]byte, int) {
 	//     'E' sign digits
 	//     'e' sign digits
 
-	if len(b) == 0 {
-		return nil, 0
-	}
-
-	if b[0] != 'e' && b[0] != 'E' {
+	if len(b) == 0 ||
+		(b[0] != 'e' && b[0] != 'E') {
 		return nil, 0
 	}
 
 	c := 1 // we've [c]onsumed 'e'
-	sign, consumed := ParseSign(b[c:])
+	_, consumed := ParseSign(b[c:])
 
 	if consumed == 0 {
 		return nil, 0
 	}
 	c += consumed
 
-	digits, consumed, err := ParseDigits(b[c:])
+	_, consumed, err := ParseDigits(b[c:])
 	if err != nil {
 		return nil, 0
 	}
 	c += consumed
 
-	fmt.Printf("%c %s\n", sign, string(digits))
-
 	return b[0:c], c
-
 }
 
-//  ParseSign returns '+' or '-' and 1, or return zero byte and 0
-func ParseSign(b []byte) (byte, int) {
+// todo rename parse functions to consume and create interface{} Consumer... easier to test
+
+func ParseSign(b []byte) ([]byte, int) {
 	// sign
 	//     ""
 	//     '+'
 	//     '-'
 
-	if len(b) == 0 {
-		return 0, 0
+	if len(b) == 0 ||
+		(b[0] != '+' && b[0] != '-') {
+		return nil, 0
 	}
 
-	switch b[0] {
-	case '+', '-':
-		return b[0], 1
-	default:
-		return 0, 0
-	}
-}
-
-//  ParseDigit returns b if the ascii value of b represents the a
-//  digit from 0 to 9, otherwise returns an error
-func ParseDigit(c byte) (byte, error) {
-	d := int(c - 48)
-	if d >= 0 && d <= 9 {
-		return c, nil
-	}
-	return 0, fmt.Errorf("not a digit")
+	return b[:1], 1
 }
 
 func ParseFrac(b []byte) ([]byte, int) {
@@ -114,107 +157,194 @@ func ParseFrac(b []byte) ([]byte, int) {
 	return b[0:c], c
 }
 
+func IsDigit(c byte) bool {
+	// digit
+	//     '0'
+	//     onenine
+	return c == '0' || IsOneNine(c)
+}
+
+func IsOneNine(c byte) bool {
+	// onenine
+	//     '1' . '9'
+	return c >= '1' && c <= '9'
+}
+func ParseCharacters(b []byte) ([]byte, int) {
+	// characters
+	//     ""
+	//     character characters
+
+	if len(b) == 0 {
+		return nil, 0
+	}
+
+	_, c, err := ParseCharacter(b)
+	if err != nil {
+		return nil, 0
+	}
+
+	_, consumed := ParseCharacters(b[c:])
+	for consumed > 0 {
+		c += consumed
+		_, consumed = ParseCharacters(b[c:])
+	}
+
+	return b[:c], c
+}
+
+func ParseCharacter(b []byte) ([]byte, int, error) {
+	// character
+	//     '0020' . '10ffff' - '"' - '\'
+	//     '\' escape
+
+	if len(b) == 0 {
+		return nil, 0, fmt.Errorf("nothing to parse")
+	}
+
+	if b[0] == '\\' { // single backslash character
+		_, consumed, err := ParseEscape(b[1:])
+		if err != nil {
+			return nil, 0, fmt.Errorf("invalid character")
+		}
+		consumed += 1 // we consumed the backslash
+		return b[:consumed], consumed, nil
+	}
+
+	if b[0] == '"' {
+		return nil, 0, fmt.Errorf("invalid character")
+	}
+
+	// 0x10ffff overflows the length of a byte
+	// So we need to extract the first rune from b
+	// then verify we can verify we are within the range specified above
+
+	r, size := utf8.DecodeRune(b)
+	// r contains the first rune of the string
+	// size is the size of the rune in bytes
+
+	if r == utf8.RuneError {
+		return nil, 0, fmt.Errorf("invalid char: Rune Error")
+	}
+
+	fmt.Fprintf(os.Stderr, "0x%06x\n", r)
+
+	if 0x0020 <= r && r <= 0x10ffff {
+		return b[:size], size, nil
+	}
+
+	return nil, 0, fmt.Errorf("invalid char")
+}
+
+func ParseEscape(b []byte) ([]byte, int, error) {
+	// escape
+	//     '"'
+	//     '\'
+	//     '/'
+	//     'b'
+	//     'n'
+	//     'r'
+	//     't'
+	//     'u' hex hex hex hex
+
+	if len(b) == 0 {
+		return nil, 0, fmt.Errorf("nothing to parse")
+	}
+
+SWITCH:
+	switch b[0] {
+	// '\\' is single backslash character
+	case '"', '\\', '/', 'b', 'n', 'r', 't':
+		return b[:1], 1, nil
+	case 'u':
+		if len(b) < 5 {
+			break // not enough hex to consume
+		}
+		for i := 1; i < 5; i++ {
+			if !IsHex(b[i]) {
+				break SWITCH
+			}
+		}
+		return b[:5], 5, nil
+	}
+
+	return nil, 0, fmt.Errorf("Invalid escape")
+}
+func ParseWhitespace(b []byte) ([]byte, int) {
+	// ws
+	//     ""
+	//     '0009' ws
+	//     '000a' ws
+	//     '000d' ws
+	//     '0020' ws
+
+	var i int
+	var w byte
+
+FOR:
+	for i, w = range b {
+		switch w {
+		case 0x0009, 0x000a, 0x000d, 0x0020:
+			continue
+		default:
+			break FOR
+		}
+	}
+
+	return b[0:i], i
+}
+
 //  ParseDigits returns b[0:x] such that every ascii value from b[0]
 //  to b[x] represents a digit from 0 to 9, along with the length of b[0:x]
 func ParseDigits(b []byte) ([]byte, int, error) {
-
-	// todo this is wrong - should through error e.g. on non-digit "dsa"
 
 	// digits
 	//     digit
 	//     digit digits
 
-	for i, c := range b {
-		_, err := ParseDigit(c)
-		if err != nil {
-			return b[0:i], i, nil
-		}
+	if len(b) == 0 {
+		return nil, 0, fmt.Errorf("nothing to parse")
 	}
-	return nil, 0, fmt.Errorf("expecting something but what?")
+
+	// check first digit
+	if !IsDigit(b[0]) {
+		return nil, 0, fmt.Errorf("first byte must be a digit")
+	}
+
+	// consume as many digits as possible
+	for i, d := range b {
+		if IsDigit(d) {
+			continue
+		}
+		return b[0:i], i, nil
+	}
+
+	// we've consumed everything we return the whole slice back
+	return b, len(b), nil
 }
 
-func ParseInt(b []byte) ([]byte, int, error) {
-	// int
-	//     digit
-	//     onenine digits
-	//     '-' digit
-	//     '-' onenine digits
-
-	return nil, 0, fmt.Errorf("expecting something but what?")
-}
-
-func ParseHex(b []byte) (byte, error) {
+func IsHex(b byte) bool {
 	// hex
 	//     digit
 	//     'A' . 'F'
 	//     'a' . 'f'
 
-	if len(b) == 0 {
-		return 0, fmt.Errorf("expecting something but what?")
-	}
+	return IsDigit(b) ||
+		('A' <= b && b <= 'F') ||
+		('a' <= b && b <= 'f')
 
-	d, err := ParseDigit(b[0])
-	if err == nil {
-		return d, nil
-	}
-
-	// todo this can be faster
-	if bytes.Contains([]byte("ABCDEFabcdef"), []byte{b[0]}) {
-		return b[0], nil
-	}
-
-	return 0, fmt.Errorf("expecting something but what?")
 }
 
-func _TestParseDigits() {
-	digits := []byte("2312012sada")
-
-	ds, length, err := ParseDigits(digits)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("%d characters parsed\ndigits are: %s\n", length, string(ds))
-}
-
-func _TestParseSign() {
-	byts := []byte("-2312012sada")
-
-	sign, length := ParseSign(byts)
-	fmt.Printf("%d characters parsed\nsign is: %s\n", length, string(sign))
-}
-
-func _TestParseExp() {
-	byts := []byte("e-2312012sada")
-
-	sign, length := ParseExp(byts)
-	fmt.Printf("%d characters parsed\nexp is: %s\n", length, string(sign))
-}
-
-func _TestParseFrac() {
-	byts := []byte(".234324asdf-2312012sada")
-
-	frac, length := ParseFrac(byts)
-	fmt.Printf("%d characters parsed\nfrac is: %s\n", length, string(frac))
-}
-
-func _TestParseHex() {
-	byts := []byte("F2312012sada")
-	hex, err := ParseHex(byts)
-	fmt.Printf("err: %s\nhex is: %s\n", err, string(hex))
-}
-
-func Run(payload []byte) {
-	_TestParseDigits()
+func Run() {
 
 	return
+	// var payload []byte
+	// for _, c := range payload {
+	// 	d, err := ParseDigit(c)
 
-	for _, c := range payload {
-		d, err := ParseDigit(c)
-
-		fmt.Printf("%c", c)
-		if err != nil {
-			continue
-		}
-		fmt.Printf("[%d]", d)
-	}
+	// 	fmt.Printf("%c", c)
+	// 	if err != nil {
+	// 		continue
+	// 	}
+	// 	fmt.Printf("[%d]", d)
+	// }
 }
