@@ -21,6 +21,21 @@ type node struct {
 	parent *node
 }
 
+func ParseJSON(b []byte) ([]byte, int, error) {
+	// TODO add unit test for this...
+
+	// json
+	//     element
+
+	_, c, err := ParseElement(b)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return b[:c], c, nil
+
+}
+
 func ParseValue(b []byte) ([]byte, int, error) {
 	// TODO add unit test for this...
 
@@ -574,19 +589,4 @@ func IsHex(b byte) bool {
 		('A' <= b && b <= 'F') ||
 		('a' <= b && b <= 'f')
 
-}
-
-func Run() {
-
-	return
-	// var payload []byte
-	// for _, c := range payload {
-	// 	d, err := ParseDigit(c)
-
-	// 	fmt.Printf("%c", c)
-	// 	if err != nil {
-	// 		continue
-	// 	}
-	// 	fmt.Printf("[%d]", d)
-	// }
 }
