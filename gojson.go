@@ -14,9 +14,11 @@ type JsonType int
 const (
 	TypeString JsonType = iota
 	TypeNumber
+	TypeCharacter
 	TypeObject
 	TypeFrac
 	TypeArray
+	TypeElement
 	TypeExp
 	TypeSign
 	TypeDigits
@@ -253,33 +255,53 @@ func ParseElements(b []byte) ([]byte, int, error) {
 	return b[:c], c, nil
 }
 
-func ParseElement(b []byte) ([]byte, int, error) {
+type Element struct{ Node }
+
+// todo todo todo todo JIM start here tomorrow
+// todo a func(e *Element) Value() returns Value w/o whitespace
+
+func ParseElement(b []byte) (*Element, int, error) {
+	// element
+	//     ws value ws
+
+	ret := &Element{Node: Node{
+		Type:   TypeElement,
+		Parent: nil, // todo
+	}}
+
 	_, c := ParseWhitespace(b)
 
 	_, consumed, err := ParseValue(b[c:])
 	if err != nil {
-		return nil, 0, err
+		return ret, 0, err
 	}
 	c += consumed
 
 	_, consumed = ParseWhitespace(b[c:])
 	c += consumed
 
-	return b[:c], c, nil
+	ret.b = b[:c]
+	return ret, c, nil
 }
 
-func ParseString(b []byte) ([]byte, int, error) {
+type String struct{ Node }
 
+func ParseString(b []byte) (*String, int, error) {
 	// string
 	//     '"' characters '"'
 
+	ret := &String{Node: Node{
+		Type:   TypeString,
+		Parent: nil, // todo
+	}}
+
 	if len(b) < 2 {
 		// need at least two double quotes
-		return nil, 0, fmt.Errorf("nothing to parse")
+		return ret, 0, fmt.Errorf("nothing to parse")
 	}
 
 	if b[0] != '"' {
-		return nil, 0, fmt.Errorf("invalid char: expecting quote")
+		return ret, 0, fmt.Errorf("invalid char: expecting quote")
 	}
 
 	c := 1 // we've consumed the first double quote
@@ -289,17 +311,18 @@ func ParseString(b []byte) ([]byte, int, error) {
 
 	// noMoreToConsume
 	if len(b[c:]) == 0 {
-		return nil, 0, fmt.Errorf("EOF")
+		return ret, 0, fmt.Errorf("EOF")
 	}
 
 	// next unconsumed byte is not '"'
 	if b[c:][0] != '"' {
-		return nil, 0, fmt.Errorf("invalid char: expecting quote")
+		return ret, 0, fmt.Errorf("invalid char: expecting quote")
 	}
 
 	c += 1 // consume final quote
 
-	return b[:c], c, nil
+	ret.b = b[:c]
+	return ret, c, nil
 }
 
 type Number struct{ Node }
@@ -564,26 +587,37 @@ func ParseCharacters(b []byte) ([]byte, int) {
 	return b[:c], c
 }
 
-func ParseCharacter(b []byte) ([]byte, int, error) {
+type Character struct{ Node }
+
+// I've made sure that all Parse functions that return *Something doesn't return nil
+// This is a contract that should be documented somewhere. But I wonder, should we
+// return non-pointer... need to see impact on heap vs stack memory allocation, garbage collection, speed
+func ParseCharacter(b []byte) (*Character, int, error) {
 	// character
 	//     '0020' . '10ffff' - '"' - '\'
 	//     '\' escape
 
+	ret := &Character{Node: Node{
+		Type:   TypeCharacter,
+		Parent: nil, // todo
+	}}
+
 	if len(b) == 0 {
-		return nil, 0, fmt.Errorf("nothing to parse")
+		return ret, 0, fmt.Errorf("nothing to parse")
 	}
 
 	if b[0] == '\\' { // single backslash character
 		_, consumed, err := ParseEscape(b[1:])
 		if err != nil {
-			return nil, 0, fmt.Errorf("invalid character")
+			return ret, 0, fmt.Errorf("invalid character")
 		}
 		consumed += 1 // we consumed the backslash
-		return b[:consumed], consumed, nil
+		ret.b = b[:consumed]
+		return ret, consumed, nil
 	}
 
 	if b[0] == '"' {
-		return nil, 0, fmt.Errorf("invalid character")
+		return ret, 0, fmt.Errorf("invalid character")
 	}
 
 	// 0x10ffff overflows the length of a byte
@@ -595,14 +629,15 @@ func ParseCharacter(b []byte) ([]byte, int, error) {
 	// size is the size of the rune in bytes
 
 	if r == utf8.RuneError {
-		return nil, 0, fmt.Errorf("invalid char: Rune Error")
+		return ret, 0, fmt.Errorf("invalid char: Rune Error")
 	}
 
 	if 0x0020 <= r && r <= 0x10ffff {
-		return b[:size], size, nil
+		ret.b = b[:size]
+		return ret, size, nil
 	}
 
-	return nil, 0, fmt.Errorf("invalid char")
+	return ret, 0, fmt.Errorf("invalid char")
 }
 
 type Escape struct{ Node }

@@ -638,8 +638,8 @@ func TestParseCharacter(t *testing.T) {
 			}
 
 			// byte.Compare
-			if string(tc.expected) != string(actual) {
-				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			if string(tc.expected) != string(actual.b) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual.b))
 			}
 		})
 	}
@@ -772,8 +772,8 @@ func TestParseString(t *testing.T) {
 			}
 
 			// byte.Compare
-			if string(tc.expected) != string(actual) {
-				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			if string(tc.expected) != string(actual.b) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual.b))
 			}
 		})
 	}
@@ -835,8 +835,8 @@ func TestParseElement(t *testing.T) {
 			}
 
 			// byte.Compare
-			if string(tc.expected) != string(actual) {
-				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			if string(tc.expected) != string(actual.b) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual.b))
 			}
 		})
 	}
