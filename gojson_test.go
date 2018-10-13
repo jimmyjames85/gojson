@@ -463,8 +463,8 @@ func TestParseNumber(t *testing.T) {
 			}
 
 			// byte.Compare
-			if string(tc.expected) != string(actual) {
-				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			if string(tc.expected) != string(actual.b) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual.b))
 			}
 		})
 	}
@@ -498,7 +498,6 @@ func TestParseEscape(t *testing.T) {
 			input:    []byte(`nthis would be on a newline`),
 			expected: []byte(`n`),
 		},
-
 		{
 			name:     "r for caraige return",
 			input:    []byte(`r whatabout linefeed? is that just \n`),
@@ -562,8 +561,8 @@ func TestParseEscape(t *testing.T) {
 			}
 
 			// byte.Compare
-			if string(tc.expected) != string(actual) {
-				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			if string(tc.expected) != string(actual.b) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual.b))
 			}
 		})
 	}

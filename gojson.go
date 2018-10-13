@@ -22,6 +22,7 @@ const (
 	TypeDigits
 	TypeInt
 	TypeWhitespace
+	TypeEscape
 )
 
 type Node struct {
@@ -301,13 +302,38 @@ func ParseString(b []byte) ([]byte, int, error) {
 	return b[:c], c, nil
 }
 
-func ParseNumber(b []byte) ([]byte, int, error) {
+type Number struct{ Node }
+
+func (n *Number) Int() (int64, error) {
+	d := bytes.IndexByte(n.b, '.')
+	if d == -1 {
+		return strconv.ParseInt(string(n.b), 10, 64)
+	}
+	return 0, fmt.Errorf("not an integer")
+}
+
+func (n *Number) Float64() float64 {
+	ret, err := strconv.ParseFloat(string(n.b), 64)
+	if err != nil {
+		// then we did not parse digits correctly
+		panic(err) // todo how do return message that makes sense, when you ParsedDigits you got an error that you ignored
+	}
+	return ret
+}
+
+func ParseNumber(b []byte) (*Number, int, error) {
 	// number
 	//     int frac exp
+	//
+	// Note int is required, but frac and exp can be empty strings
 
+	ret := &Number{Node: Node{
+		Type:   TypeNumber,
+		Parent: nil, // todo
+	}}
 	_, consumed, err := ParseInt(b)
 	if err != nil {
-		return nil, 0, err
+		return ret, 0, err
 	}
 
 	c := consumed
@@ -317,7 +343,9 @@ func ParseNumber(b []byte) ([]byte, int, error) {
 	_, consumed = ParseExp(b[c:])
 	c += consumed
 
-	return b[:c], c, nil
+	ret.b = b[:c]
+
+	return ret, c, nil
 }
 
 type Int struct{ Node }
@@ -577,7 +605,9 @@ func ParseCharacter(b []byte) ([]byte, int, error) {
 	return nil, 0, fmt.Errorf("invalid char")
 }
 
-func ParseEscape(b []byte) ([]byte, int, error) {
+type Escape struct{ Node }
+
+func ParseEscape(b []byte) (*Escape, int, error) {
 	// escape
 	//     '"'
 	//     '\'
@@ -588,15 +618,21 @@ func ParseEscape(b []byte) ([]byte, int, error) {
 	//     't'
 	//     'u' hex hex hex hex
 
+	ret := &Escape{Node: Node{
+		Type:   TypeEscape,
+		Parent: nil, // todo
+	}}
+
 	if len(b) == 0 {
-		return nil, 0, fmt.Errorf("nothing to parse")
+		return ret, 0, fmt.Errorf("nothing to parse")
 	}
 
 SWITCH:
 	switch b[0] {
 	// '\\' is single backslash character
 	case '"', '\\', '/', 'b', 'n', 'r', 't':
-		return b[:1], 1, nil
+		ret.b = b[:1]
+		return ret, 1, nil
 	case 'u':
 		if len(b) < 5 {
 			break // not enough hex to consume
@@ -606,10 +642,11 @@ SWITCH:
 				break SWITCH
 			}
 		}
-		return b[:5], 5, nil
+		ret.b = b[:5]
+		return ret, 5, nil
 	}
 
-	return nil, 0, fmt.Errorf("Invalid escape")
+	return ret, 0, fmt.Errorf("Invalid escape")
 }
 
 type Whitespace struct{ Node }
