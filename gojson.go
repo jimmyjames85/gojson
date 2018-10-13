@@ -2,7 +2,6 @@ package gojson
 
 import (
 	"fmt"
-	"os"
 	"unicode/utf8"
 )
 
@@ -21,18 +20,38 @@ type node struct {
 	parent *node
 }
 
-func parseString() {}
+func ParseString(b []byte) ([]byte, int, error) {
 
-func parseNumber() {
+	// string
+	//     '"' characters '"'
 
+	if len(b) < 2 {
+		// need at least two double quotes
+		return nil, 0, fmt.Errorf("nothing to parse")
+	}
+
+	if b[0] != '"' {
+		return nil, 0, fmt.Errorf("invalid char: expecting quote")
+	}
+
+	c := 1 // we've consumed the first double quote
+
+	_, consumed := ParseCharacters(b[c:])
+	c += consumed
+
+	if len(b[c:]) == 0 {
+		return nil, 0, fmt.Errorf("EOF")
+	}
+
+	if b[c:][0] != '"' {
+		return nil, 0, fmt.Errorf("invalid char: expecting quote")
+	}
+
+	c += 1 // consume final quote
+
+	return b[:c], c, nil
 }
 
-func parseObject() {}
-
-func parseArray() {}
-
-// NOTE if empty string satisfies a json type then an error should not
-// be returned
 func ParseNumber(b []byte) ([]byte, int, error) {
 	// number
 	//     int frac exp
@@ -225,8 +244,6 @@ func ParseCharacter(b []byte) ([]byte, int, error) {
 	if r == utf8.RuneError {
 		return nil, 0, fmt.Errorf("invalid char: Rune Error")
 	}
-
-	fmt.Fprintf(os.Stderr, "0x%06x\n", r)
 
 	if 0x0020 <= r && r <= 0x10ffff {
 		return b[:size], size, nil

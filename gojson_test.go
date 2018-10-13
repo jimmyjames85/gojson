@@ -604,7 +604,7 @@ func TestParseCharacter(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "invalid escape sequence",
+			name:    "invalid escape sequence stops",
 			input:   []byte(`\`),
 			wantErr: true,
 		},
@@ -655,51 +655,115 @@ func TestParseCharacters(t *testing.T) {
 			input:    []byte(string([]rune{0x60, 0x10ffff, 0x60, 0x19})),
 			expected: []byte(string([]rune{0x60, 0x10ffff, 0x60})),
 		},
-		// {
-		// 	name:    "greater than 0x10ffff",
-		// 	input:   []byte(string([]rune{0x110000})),
-		// },
-		// {
-		// 	name:     "some utf8 char",
-		// 	input:    []byte("世 wat is this"),
-		// 	expected: []byte("世"),
-		// },
-		// {
-		// 	name:     "escape sequence",
-		// 	input:    []byte(`\r asdfa`),
-		// 	expected: []byte(`\r`),
-		// },
-		// {
-		// 	name:     "escape sequence forward slash",
-		// 	input:    []byte(`\/ asdfa`),
-		// 	expected: []byte(`\/`),
-		// },
-		// {
-		// 	name:    "invalid escape sequence",
-		// 	input:   []byte(`\5 asdfa`),
-		// 	wantErr: true,
-		// },
-		// {
-		// 	name:    "invalid escape sequence",
-		// 	input:   []byte(`\`),
-		// 	wantErr: true,
-		// },
-		// {
-		// 	name:    "nil input",
-		// 	input:   nil,
-		// 	wantErr: true,
-		// },
-		// {
-		// 	name:    "emtpy slice",
-		// 	input:   []byte{},
-		// 	wantErr: true,
-		// },
+		{
+			name:     "stop at anything greater than 0x10ffff",
+			input:    []byte(string([]rune{0x40, 0x34, 0x110000})),
+			expected: []byte(string([]rune{0x40, 0x34})),
+		},
+		{
+			name:     "some utf8 chars",
+			input:    []byte("Cos'è ユニコードとはか？ ಯುನಿಕೋಡ್ ಎಂದರೇನು 유니코드에 대해 Што е युनिकोड के हो? гэж юу вэ qu'es aquò  يونی‌کُد چيست؟ யூனிக்கோடு என்றால் என்ன యూనీకోడ్ అంటే ఏమిటి"),
+			expected: []byte("Cos'è ユニコードとはか？ ಯುನಿಕೋಡ್ ಎಂದರೇನು 유니코드에 대해 Што е युनिकोड के हो? гэж юу вэ qu'es aquò  يونی‌کُد چيست؟ யூனிக்கோடு என்றால் என்ன యూనీకోడ్ అంటే ఏమిటి"),
+		},
+		{
+			name:     "strings with escape sequence",
+			input:    []byte(`this is a line and \r\nthis should be on a newline \t with a tab`),
+			expected: []byte(`this is a line and \r\nthis should be on a newline \t with a tab`),
+		},
+		{
+			name:     "invalid escape sequence",
+			input:    []byte(`this should stop here\5 asdfa`),
+			expected: []byte(`this should stop here`),
+		},
+		{
+			name:     "nil input",
+			input:    nil,
+			expected: nil,
+		},
+		{
+			name:     "emtpy slice",
+			input:    []byte{},
+			expected: []byte{},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
 			actual, actualLen := gojson.ParseCharacters(tc.input)
+
+			if len(tc.expected) != actualLen {
+				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
+			}
+
+			// byte.Compare
+			if string(tc.expected) != string(actual) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			}
+		})
+	}
+}
+
+func TestParseString(t *testing.T) {
+	tests := []testCase{
+		{
+			name:    "no quotes",
+			input:   []byte(`a asksja asdf`),
+			wantErr: true,
+		},
+		{
+			name:    "only one quote",
+			input:   []byte(`"oh we started of soo good`),
+			wantErr: true,
+		},
+		{
+			name:    "two quotes but invalid escape sequence",
+			input:   []byte(`"oh we started of \u00Ga but messed up in the middle"`),
+			wantErr: true,
+		},
+		{
+			name:     "happy path with quotes",
+			input:    []byte(`"the cat in the hat" is really fat`),
+			expected: []byte(`"the cat in the hat"`),
+		},
+		{
+			name:     "some utf8 char",
+			input:    []byte(`"世 wat is this"  世`),
+			expected: []byte(`"世 wat is this"`),
+		},
+
+		{
+			name:     "some more utf8 chars",
+			input:    []byte(`"Cos'è ユニコードとはか？ ಯುನಿಕೋಡ್" what does it say ಎಂದರೇನು 유니코드에 대해 Што е युनिकोड के हो? гэж юу вэ qu'es aquò  يونی‌کُد چيست؟ யூனிக்கோடு என்றால் என்ன యూనీకోడ్ అంటే ఏమిటి`),
+			expected: []byte(`"Cos'è ユニコードとはか？ ಯುನಿಕೋಡ್"`),
+		},
+		{
+			name:    "out of range char is bad",
+			input:   []byte{0x22, 0x19, 0x22},
+			wantErr: true,
+		},
+		{
+			name:    "nil input",
+			input:   nil,
+			wantErr: true,
+		},
+		{
+			name:    "emtpy slice",
+			input:   []byte{},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+
+			actual, actualLen, err := gojson.ParseString(tc.input)
+
+			if tc.wantErr && err == nil {
+				t.Errorf("expecting error but got <nil>")
+			} else if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %s", err.Error())
+			}
 
 			if len(tc.expected) != actualLen {
 				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
