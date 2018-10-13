@@ -1,6 +1,7 @@
 package gojson
 
 import (
+	"bytes"
 	"fmt"
 	"unicode/utf8"
 )
@@ -18,6 +19,225 @@ const (
 
 type node struct {
 	parent *node
+}
+
+func ParseValue(b []byte) ([]byte, int, error) {
+	// TODO add unit test for this...
+
+	if len(b) == 0 {
+		return nil, 0, fmt.Errorf("nothing to parse")
+	}
+
+	if bytes.HasPrefix(b, []byte(`true`)) {
+		return b[:4], 4, nil
+	} else if bytes.HasPrefix(b, []byte(`false`)) {
+		return b[:5], 5, nil
+	} else if bytes.HasPrefix(b, []byte(`null`)) {
+		return b[:4], 4, nil
+	}
+
+	_, c, err := ParseNumber(b)
+	if err == nil {
+		return b[:c], c, nil
+	}
+
+	_, c, err = ParseString(b)
+	if err == nil {
+		return b[:c], c, nil
+	}
+
+	_, c, err = ParseArray(b)
+	if err == nil {
+		return b[:c], c, nil
+	}
+
+	// TODO this isn't preformant we attempt each type and rescan on failures
+	_, c, err = ParseObject(b)
+	if err == nil {
+		return b[:c], c, nil
+	}
+
+	return nil, 0, fmt.Errorf("todo: unsported")
+
+}
+
+func ParseObject(b []byte) ([]byte, int, error) {
+	// object
+	//     '{' ws '}'
+	//     '{' members '}'
+
+	// copy/pasta from ParseArray
+	if len(b) == 0 || b[0] != '{' {
+		return nil, 0, fmt.Errorf("invalid Object: expecting '{'")
+	}
+	c := 1 // consume the '{'
+
+	// attempt to consume whitspace a check for closing '}'
+	_, consumed := ParseWhitespace(b[c:])
+	c += consumed // consume whitespace
+	if len(b[c:]) > 0 && b[c:][0] == '}' {
+		c++ // consume the '}'
+		// we have empty object
+		return b[:c], c, nil
+	}
+	c -= consumed // unconsume whitespace and let it be part of elements
+
+	_, consumed, err := ParseMembers(b[c:])
+	if err != nil {
+		return nil, 0, err
+	}
+	c += consumed
+
+	if len(b[c:]) > 0 && b[c:][0] == '}' {
+		c++ // consume the '}'
+		// we have non-empty object
+		return b[:c], c, nil
+	}
+
+	return nil, 0, fmt.Errorf("invalid object: expecting '}'")
+}
+
+func ParseMembers(b []byte) ([]byte, int, error) {
+	// members
+	//     member
+	//     member ',' members
+
+	// this is copy/pasta from ParseElements
+
+	_, consumed, err := ParseMember(b)
+	if err != nil {
+		// must parse at least one member
+		return nil, 0, err
+	}
+
+	c := consumed
+	// noMoreToConsume || next unconsumed byte is not ','
+	if len(b[c:]) == 0 || b[c:][0] != ',' {
+		return b[:c], c, nil
+	}
+	c++ // consume the ','
+
+	// TODO what is the recusion limit in go? and will it limit
+	// how many members in a json 'list' we can support
+	_, consumed, err = ParseMembers(b[c:])
+	if err != nil {
+		c-- // don't unconsume the ',' just the first member
+		return b[:c], c, nil
+	}
+
+	c += consumed
+	return b[:c], c, nil
+}
+
+func ParseMember(b []byte) ([]byte, int, error) {
+	// member
+	//     ws string ws ':' element
+
+	_, consumed := ParseWhitespace(b)
+	c := consumed
+
+	_, consumed, err := ParseString(b[c:])
+	if err != nil {
+		return nil, 0, err
+	}
+	c += consumed
+
+	_, consumed = ParseWhitespace(b[c:])
+	c += consumed
+
+	// noMoreToConsume || next unconsumed byte is not ':'  TODO make this if stmt a func... if !nextCharIs(b[c:], ':')
+	if len(b[c:]) == 0 || b[c:][0] != ':' {
+		return nil, 0, fmt.Errorf("expecting ':' %s", b[c:])
+	}
+	c += 1 // consume the ':'
+
+	_, consumed, err = ParseElement(b[c:])
+	if err != nil {
+		return nil, 0, fmt.Errorf("expecting element")
+	}
+	c += consumed
+
+	return b[:c], c, nil
+}
+
+func ParseArray(b []byte) ([]byte, int, error) {
+	// array
+	//     '[' ws ']'
+	//     '[' elements ']'
+
+	if len(b) == 0 || b[0] != '[' {
+		return nil, 0, fmt.Errorf("invalid array: expecting '['")
+	}
+	c := 1 // consume the '['
+
+	// attempt to consume whitspace a check for closing ']'
+	_, consumed := ParseWhitespace(b[c:])
+	c += consumed // consume whitespace
+	if len(b[c:]) > 0 && b[c:][0] == ']' {
+		c++ // consume the ']'
+		// we have empty array
+		return b[:c], c, nil
+	}
+	c -= consumed // unconsume whitespace and let it be part of elements
+
+	_, consumed, err := ParseElements(b[c:])
+	if err != nil {
+		return nil, 0, err
+	}
+	c += consumed
+
+	if len(b[c:]) > 0 && b[c:][0] == ']' {
+		c++ // consume the ']'
+		// we have non-empty array
+		return b[:c], c, nil
+	}
+
+	return nil, 0, fmt.Errorf("invalid array: expecting ']'")
+}
+
+func ParseElements(b []byte) ([]byte, int, error) {
+	// elements
+	//     element
+	//     element ',' elements
+
+	_, consumed, err := ParseElement(b)
+	if err != nil {
+		// must parse at least one element
+		return nil, 0, err
+	}
+
+	c := consumed
+	// noMoreToConsume || next unconsumed byte is not ','
+	if len(b[c:]) == 0 || b[c:][0] != ',' {
+		return b[:c], c, nil
+	}
+	c++ // consume the ','
+
+	// TODO what is the recusion limit in go? and will it limit
+	// how many elements in a json 'list' we can support
+	_, consumed, err = ParseElements(b[c:])
+	if err != nil {
+		c-- // don't unconsume the ',' just the first element
+		return b[:c], c, nil
+	}
+
+	c += consumed
+	return b[:c], c, nil
+}
+
+func ParseElement(b []byte) ([]byte, int, error) {
+	_, c := ParseWhitespace(b)
+
+	_, consumed, err := ParseValue(b[c:])
+	if err != nil {
+		return nil, 0, err
+	}
+	c += consumed
+
+	_, consumed = ParseWhitespace(b[c:])
+	c += consumed
+
+	return b[:c], c, nil
 }
 
 func ParseString(b []byte) ([]byte, int, error) {
@@ -39,10 +259,12 @@ func ParseString(b []byte) ([]byte, int, error) {
 	_, consumed := ParseCharacters(b[c:])
 	c += consumed
 
+	// noMoreToConsume
 	if len(b[c:]) == 0 {
 		return nil, 0, fmt.Errorf("EOF")
 	}
 
+	// next unconsumed byte is not '"'
 	if b[c:][0] != '"' {
 		return nil, 0, fmt.Errorf("invalid char: expecting quote")
 	}
@@ -294,20 +516,23 @@ func ParseWhitespace(b []byte) ([]byte, int) {
 	//     '000d' ws
 	//     '0020' ws
 
-	var i int
-	var w byte
+	var n int
 
 FOR:
-	for i, w = range b {
-		switch w {
+	for _, ws := range b {
+		switch ws {
 		case 0x0009, 0x000a, 0x000d, 0x0020:
+			n++
 			continue
 		default:
 			break FOR
 		}
 	}
 
-	return b[0:i], i
+	// TODO for range loop doesn't incrememnt on the last loop?
+	// for i, ws := range b{} if len(b)== 10 then i should be 10?
+
+	return b[:n], n
 }
 
 //  ParseDigits returns b[0:x] such that every ascii value from b[0]

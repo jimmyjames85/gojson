@@ -73,6 +73,11 @@ func TestParseWhitespace(t *testing.T) {
 			expected: []byte("      "),
 		},
 		{
+			name:     "all whitespace",
+			input:    []byte("      "),
+			expected: []byte("      "),
+		},
+		{
 			name:     "no whitespace",
 			input:    []byte("001234567asdag"),
 			expected: []byte(""),
@@ -758,6 +763,460 @@ func TestParseString(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 
 			actual, actualLen, err := gojson.ParseString(tc.input)
+
+			if tc.wantErr && err == nil {
+				t.Errorf("expecting error but got <nil>")
+			} else if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %s", err.Error())
+			}
+
+			if len(tc.expected) != actualLen {
+				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
+			}
+
+			// byte.Compare
+			if string(tc.expected) != string(actual) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			}
+		})
+	}
+}
+
+func TestParseElement(t *testing.T) {
+	tests := []testCase{
+		{
+			name:     "null",
+			input:    []byte("  null \n \r \t   ,STOP sadfasf "),
+			expected: []byte("  null \n \r \t   "),
+		},
+		{
+			name:     "true",
+			input:    []byte("\n\n\n\r\t  \t true \n NOMORE"),
+			expected: []byte("\n\n\n\r\t  \t true \n "),
+		},
+		{
+			name:     "false",
+			input:    []byte(" false  \t , what: "),
+			expected: []byte(" false  \t "),
+		},
+		{
+			name:    "TRUE cant be in caps",
+			input:   []byte("  \t TRUE: \n what: "),
+			wantErr: true,
+		},
+		{
+			name:    "at least must have an element: all white space is bad",
+			input:   []byte("     \t \n"),
+			wantErr: true,
+		},
+		{
+			name:     "a string",
+			input:    []byte(" \t \r \n \"string goes here with an escaped \\n newline : ) \" \r \n \t    <- more whitespace should be consumed as well"),
+			expected: []byte(" \t \r \n \"string goes here with an escaped \\n newline : ) \" \r \n \t    "),
+		},
+		{
+			name:    "a bad string: cannot have an unescapped newline in a string",
+			input:   []byte(" \t \r \n \"string goes here \n\""),
+			wantErr: true,
+		},
+		// todo not all values are tested e.g. Number
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+
+			actual, actualLen, err := gojson.ParseElement(tc.input)
+
+			if tc.wantErr && err == nil {
+				t.Errorf("expecting error but got <nil>")
+			} else if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %s", err.Error())
+			}
+
+			if len(tc.expected) != actualLen {
+				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
+			}
+
+			// byte.Compare
+			if string(tc.expected) != string(actual) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			}
+		})
+	}
+}
+
+func TestParseElements(t *testing.T) {
+	tests := []testCase{
+		{
+			name:     "signle null",
+			input:    []byte("  null \n \r \t   ,STOP sadfasf "),
+			expected: []byte("  null \n \r \t   "),
+		},
+		{
+			name:     "two elements",
+			input:    []byte("\n\n\n\r\t  \t true \n, false NOMORE"),
+			expected: []byte("\n\n\n\r\t  \t true \n, false "),
+		},
+		{
+			name:     "dont consume last comma , ",
+			input:    []byte(" 234, 2342 , 222 , STOP"),
+			expected: []byte(" 234, 2342 , 222 "),
+		},
+		{
+			name:    "can't start with a comma",
+			input:   []byte(", 34,  \t TRUE: \n what: "),
+			wantErr: true,
+		},
+		{
+			name:    "at least must have an element: all white space is bad",
+			input:   []byte("     \t \n"),
+			wantErr: true,
+		},
+		{
+			name:     "consume as many proper elements as possible: not the bad string",
+			input:    []byte("12, 1233 , 12424,  \t \r \n \"string goes here \n\", 234, 22 "),
+			expected: []byte("12, 1233 , 12424"),
+		},
+		{
+			name:    "nil input",
+			input:   nil,
+			wantErr: true,
+		},
+		{
+			name:    "emtpy slice",
+			input:   []byte{},
+			wantErr: true,
+		},
+		// todo not all values are tested e.g. Number
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+
+			actual, actualLen, err := gojson.ParseElements(tc.input)
+
+			if tc.wantErr && err == nil {
+				t.Errorf("expecting error but got <nil>")
+			} else if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %s", err.Error())
+			}
+
+			if len(tc.expected) != actualLen {
+				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
+			}
+
+			// byte.Compare
+			if string(tc.expected) != string(actual) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			}
+		})
+	}
+}
+
+func TestParseArray(t *testing.T) {
+	tests := []testCase{
+		{
+			name:     "white space array",
+			input:    []byte("[   \n \n \r \t ]  STOP here"),
+			expected: []byte("[   \n \n \r \t ]"),
+		},
+		{
+			name:     "empty array",
+			input:    []byte("[]  STOP here"),
+			expected: []byte("[]"),
+		},
+		{
+			name:    "must start with [",
+			input:   []byte("   []"),
+			wantErr: true,
+		},
+		{
+			name:     "non-empty array",
+			input:    []byte("[ 234, 2342 , 222 , true, null ] no mo"),
+			expected: []byte("[ 234, 2342 , 222 , true, null ]"),
+		},
+		{
+			name:    "can't start with a comma",
+			input:   []byte("[ , 234, 2342 , 222 , true, null ] no mo"),
+			wantErr: true,
+		},
+		{
+			name:    "invalid element",
+			input:   []byte("[ 234, 2342 , 222 , TRUE, null ]"),
+			wantErr: true,
+		},
+		{
+			name:    "missing ] is bad",
+			input:   []byte(`[ "jim", "was", true, "but forgot the ]"`),
+			wantErr: true,
+		},
+		{
+			name:     "parse ] outside of string",
+			input:    []byte(`[ "jim", "was", true, "but forgot the ]"]`),
+			expected: []byte(`[ "jim", "was", true, "but forgot the ]"]`),
+		},
+		{
+			name:    "nil input",
+			input:   nil,
+			wantErr: true,
+		},
+		{
+			name:    "emtpy slice",
+			input:   []byte{},
+			wantErr: true,
+		},
+
+		// todo not all values are tested e.g. Object
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+
+			actual, actualLen, err := gojson.ParseArray(tc.input)
+
+			if tc.wantErr && err == nil {
+				t.Errorf("expecting error but got <nil>")
+			} else if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %s", err.Error())
+			}
+
+			if len(tc.expected) != actualLen {
+				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
+			}
+
+			// byte.Compare
+			if string(tc.expected) != string(actual) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			}
+		})
+	}
+}
+
+func TestParseMember(t *testing.T) {
+	tests := []testCase{
+		{
+			name:     "simple member",
+			input:    []byte(`   "key": 2343    stop here`),
+			expected: []byte(`   "key": 2343    `),
+		},
+		{
+			name:     "whitespace is okay",
+			input:    []byte("  \r \n \"thisisthekey\"  \t\n\r : \r\n null\r\t  STOP here"),
+			expected: []byte("  \r \n \"thisisthekey\"  \t\n\r : \r\n null\r\t  "),
+		},
+		{
+			name:    "must start with whitespace and/or a string",
+			input:   []byte(`   null, "not":ok`),
+			wantErr: true,
+		},
+		{
+			name:     "value is an array is okay",
+			input:    []byte(`"my_array": [ 234, 2342 , 222 , true, null ] no mo`),
+			expected: []byte(`"my_array": [ 234, 2342 , 222 , true, null ] `),
+		},
+		{
+			name:    "invalid string",
+			input:   []byte(" \"we cant have \n\": 34"),
+			wantErr: true,
+		},
+		{
+			name:     "valid string",
+			input:    []byte(" \"we can have ws\"   :   \"\\t\\n34\"  stop"),
+			expected: []byte(" \"we can have ws\"   :   \"\\t\\n34\"  "),
+		},
+		{
+			name:     "emtpy strings are okay",
+			input:    []byte(` ""  :  ""  stop`),
+			expected: []byte(` ""  :  ""  `),
+		},
+		{
+			name:     "should consume the entire input",
+			input:    []byte(` ""  :  ""   `),
+			expected: []byte(` ""  :  ""   `),
+		},
+		{
+			name:    "nil input",
+			input:   nil,
+			wantErr: true,
+		},
+		{
+			name:    "emtpy slice",
+			input:   []byte{},
+			wantErr: true,
+		},
+
+		// todo not all values are tested e.g. Object
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+
+			actual, actualLen, err := gojson.ParseMember(tc.input)
+
+			if tc.wantErr && err == nil {
+				t.Errorf("expecting error but got <nil>")
+			} else if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %s", err.Error())
+			}
+
+			if len(tc.expected) != actualLen {
+				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
+			}
+
+			// byte.Compare
+			if string(tc.expected) != string(actual) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			}
+		})
+	}
+}
+
+func TestParseMembers(t *testing.T) {
+	tests := []testCase{
+		{
+			name:     "simple member",
+			input:    []byte(`   "key": 2343    stop here`),
+			expected: []byte(`   "key": 2343    `),
+		},
+		{
+			name:     "two members",
+			input:    []byte(`"jim":null, "key":[3 ,2 ,2,343,"jim"] STOP`),
+			expected: []byte(`"jim":null, "key":[3 ,2 ,2,343,"jim"] `),
+		},
+		{
+			name:     "consume all",
+			input:    []byte(`"jim":null, "key": "foo", "wow":   2234334      `),
+			expected: []byte(`"jim":null, "key": "foo", "wow":   2234334      `),
+		},
+		{
+			name:    "must start with whitespace and/or a string",
+			input:   []byte(`   ,null, "not":ok`),
+			wantErr: true,
+		},
+		{
+			name:     "consume what we can: invalid string",
+			input:    []byte("\"firstkey\":2, \"we cant have \n\": 34"),
+			expected: []byte("\"firstkey\":2"),
+		},
+		{
+			name:     "emtpy strings are okay",
+			input:    []byte(` ""  :  ""  , "key": "stop"   `),
+			expected: []byte(` ""  :  ""  , "key": "stop"   `),
+		},
+		{
+			name:     "whitespace between memebres",
+			input:    []byte("\"key1\" \n  :  \r\t\n 1 \n  , \n \"key2\":2   "),
+			expected: []byte("\"key1\" \n  :  \r\t\n 1 \n  , \n \"key2\":2   "),
+		},
+		{
+			name:    "nil input",
+			input:   nil,
+			wantErr: true,
+		},
+		{
+			name:    "emtpy slice",
+			input:   []byte{},
+			wantErr: true,
+		},
+		// todo not all values are tested e.g. Object
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+
+			actual, actualLen, err := gojson.ParseMembers(tc.input)
+
+			if tc.wantErr && err == nil {
+				t.Errorf("expecting error but got <nil>")
+			} else if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %s", err.Error())
+			}
+
+			if len(tc.expected) != actualLen {
+				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
+			}
+
+			// byte.Compare
+			if string(tc.expected) != string(actual) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			}
+		})
+	}
+}
+
+func TestParseObject(t *testing.T) {
+	tests := []testCase{
+		{
+			name:     "empty object",
+			input:    []byte(`{}   `),
+			expected: []byte(`{}`),
+		},
+		{
+			name:     "whitespace empty object",
+			input:    []byte("{   \r \t \n     }   "),
+			expected: []byte("{   \r \t \n     }"),
+		},
+		{
+			name:     "one member",
+			input:    []byte(`{ "foo"   : 3422 }  STOP at curly boi`),
+			expected: []byte(`{ "foo"   : 3422 }`),
+		},
+		{
+			name:     "two members",
+			input:    []byte(`{"jim":null, "key":[3 ,2 ,2,343,"jim"] } STOP`),
+			expected: []byte(`{"jim":null, "key":[3 ,2 ,2,343,"jim"] }`),
+		},
+		{
+			name:    "invalid member",
+			input:   []byte(`{"jim":null, "key":[3 ,2 ,2,343,"jim"], INVALID }`),
+			wantErr: true,
+		},
+		{
+			name:     "consume all",
+			input:    []byte(`{"jim":null, "key": "foo", "wow":   2234334      }`),
+			expected: []byte(`{"jim":null, "key": "foo", "wow":   2234334      }`),
+		},
+		{
+			name:    "must start with curly brace",
+			input:   []byte(`   ,null, "not":ok`),
+			wantErr: true,
+		},
+		{
+			name:    "invalid member string should error",
+			input:   []byte("{\"firstkey\":2, \"we cant have \n\": 34   }"),
+			wantErr: true,
+		},
+		{
+			name:     "emtpy strings are okay",
+			input:    []byte(`{ ""  :  ""  , "key": "stop"   }   stop parsing this`),
+			expected: []byte(`{ ""  :  ""  , "key": "stop"   }`),
+		},
+		{
+			name:     "whitespace between memebres",
+			input:    []byte("{\"key1\" \n  :  \r\t\n 1 \n  , \n \"key2\":2   }"),
+			expected: []byte("{\"key1\" \n  :  \r\t\n 1 \n  , \n \"key2\":2   }"),
+		},
+		{
+			name:     "member is an object",
+			input:    []byte(`{"key" : [ {"sub":1}, 23, null], "obj": {"woah":23}}`),
+			expected: []byte(`{"key" : [ {"sub":1}, 23, null], "obj": {"woah":23}}`),
+		},
+		{
+			name:    "nil input",
+			input:   nil,
+			wantErr: true,
+		},
+		{
+			name:    "emtpy slice",
+			input:   []byte{},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+
+			actual, actualLen, err := gojson.ParseObject(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
