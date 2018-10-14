@@ -291,50 +291,39 @@ func ParseElements(b []byte) (*Elements, int, error) {
 	return ret, c, nil
 }
 
-type Element struct{ Node }
+type Element []byte
 
-func ParseElement(b []byte) (*Element, int, error) {
+func ParseElement(b []byte) (Element, int, error) {
 	// element
 	//     ws value ws
-
-	ret := &Element{Node: Node{
-		Type:   TypeElement,
-		Parent: nil, // todo
-	}}
 
 	_, c := ParseWhitespace(b)
 
 	_, consumed, err := ParseValue(b[c:])
 	if err != nil {
-		return ret, 0, err
+		return nil, 0, err
 	}
 	c += consumed
 
 	_, consumed = ParseWhitespace(b[c:])
 	c += consumed
 
-	ret.b = b[:c]
-	return ret, c, nil
+	return b[:c], c, nil
 }
 
-type String struct{ Node }
+type String []byte
 
-func ParseString(b []byte) (*String, int, error) {
+func ParseString(b []byte) (String, int, error) {
 	// string
 	//     '"' characters '"'
 
-	ret := &String{Node: Node{
-		Type:   TypeString,
-		Parent: nil, // todo
-	}}
-
 	if len(b) < 2 {
 		// need at least two double quotes
-		return ret, 0, ErrNothingToParse
+		return nil, 0, ErrNothingToParse
 	}
 
 	if b[0] != '"' {
-		return ret, 0, ErrInvalidStringOpen
+		return nil, 0, ErrInvalidStringOpen
 	}
 
 	c := 1 // we've consumed the first double quote
@@ -344,52 +333,47 @@ func ParseString(b []byte) (*String, int, error) {
 
 	// noMoreToConsume
 	if len(b[c:]) == 0 {
-		return ret, 0, ErrNothingToParse
+		return nil, 0, ErrNothingToParse
 	}
 
 	// next unconsumed byte is not '"'
 	if b[c:][0] != '"' {
-		return ret, 0, ErrInvalidStringClose
+		return nil, 0, ErrInvalidStringClose
 	}
 
 	c += 1 // consume final quote
 
-	ret.b = b[:c]
-	return ret, c, nil
+	return b[:c], c, nil
 }
 
-type Number struct{ Node }
+type Number []byte
 
-func (n *Number) Int() (int64, error) {
-	d := bytes.IndexByte(n.b, '.')
+func (n Number) Int() (int64, error) {
+	d := bytes.IndexByte(n, '.')
 	if d == -1 {
-		return strconv.ParseInt(string(n.b), 10, 64)
+		return strconv.ParseInt(string(n), 10, 64)
 	}
 	return 0, ErrParseInteger // TODO is this even being used?
 }
 
-func (n *Number) Float64() float64 {
-	ret, err := strconv.ParseFloat(string(n.b), 64)
+func (n Number) Float64() float64 {
+	ret, err := strconv.ParseFloat(string(n), 64)
 	if err != nil {
 		// then we did not parse digits correctly
-		panic(err) // todo how do return message that makes sense, when you ParsedDigits you got an error that you ignored
+		panic(err) // todo how do return message that makes sense, when we ParsedDigits there was an error that you ignored
 	}
 	return ret
 }
 
-func ParseNumber(b []byte) (*Number, int, error) {
+func ParseNumber(b []byte) (Number, int, error) {
 	// number
 	//     int frac exp
 	//
 	// Note int is required, but frac and exp can be empty strings
 
-	ret := &Number{Node: Node{
-		Type:   TypeNumber,
-		Parent: nil, // todo
-	}}
 	_, consumed, err := ParseInt(b)
 	if err != nil {
-		return ret, 0, err
+		return nil, 0, err
 	}
 
 	c := consumed
@@ -399,15 +383,13 @@ func ParseNumber(b []byte) (*Number, int, error) {
 	_, consumed = ParseExp(b[c:])
 	c += consumed
 
-	ret.b = b[:c]
-
-	return ret, c, nil
+	return b[:c], c, nil
 }
 
-type Int struct{ Node }
+type Int []byte
 
-func (i *Int) Int() int64 {
-	ret, err := strconv.ParseInt(string(i.b), 10, 64)
+func (i Int) Int() int64 {
+	ret, err := strconv.ParseInt(string(i), 10, 64)
 	if err != nil {
 		// then we did not parse digits correctly
 		panic(err) // or better safe then sorry?... return 0
@@ -416,141 +398,117 @@ func (i *Int) Int() int64 {
 	return ret
 }
 
-func ParseInt(b []byte) (*Int, int, error) {
+func ParseInt(b []byte) (Int, int, error) {
 	// int
 	//     digit
 	//     onenine digits
 	//     '-' digit
 	//     '-' onenine digits
 
-	ret := &Int{Node: Node{
-		Type:   TypeInt,
-		Parent: nil, // todo
-
-	}}
+	// note: int cannot have a '+' sign
 
 	if len(b) == 0 {
-		return ret, 0, ErrNothingToParse
+		return nil, 0, ErrNothingToParse
 	}
 
 	if b[0] == '0' {
-		ret.b = b[:1]
-		return ret, 1, nil // digit
+		return b[:1], 1, nil // digit
 	}
 
+	var c int
 	if IsOneNine(b[0]) {
-		_, consumed, err := ParseDigits(b)
+		_, c, err := ParseDigits(b)
 		if err != nil {
-			ret.b = b[:1]
-			return ret, 1, nil // digit
+			return b[:1], 1, nil // digit
 		}
-		ret.b = b[:consumed]      //todo use c not consumed
-		return ret, consumed, nil // onenine digits
+		//todo use c not consumed
+		return b[:c], c, nil // onenine digits
 	}
 
 	if b[0] != '-' {
-		return ret, 0, ErrUnexpectedChar
+		return nil, 0, ErrUnexpectedChar
 	}
 
 	if len(b) > 1 && b[1] == '-' {
-		return ret, 0, ErrUnexpectedChar
+		return nil, 0, ErrUnexpectedChar
 	}
 
-	_, consumed, err := ParseInt(b[1:])
+	_, c, err := ParseInt(b[1:])
 	if err != nil {
-		return ret, 0, err
+		return nil, 0, err
 	}
+	c += 1 // the negative
 
-	consumed += 1 // the negative
-
-	ret.b = b[:consumed]
-	return ret, consumed, nil
+	return b[:c], c, nil
 }
 
-type Exp struct {
-	Node
-	sign *Sign
-	// TODO Digits
+type Exp []byte
+
+// returns 1 or -1 indicating the sign of the exponent
+func (e Exp) Sign() int {
+	sign, consumed := ParseSign(e)
+	if consumed == 0 {
+		return 1
+	}
+	if sign[0] == '-' {
+		return -1
+	}
+	return 1
 }
 
-// todo this is sign of the exponent not the number
-func (e *Exp) Positive() bool { return e.sign == nil || e.sign.Positive() }
-
-func ParseExp(b []byte) (*Exp, int) {
-
+func ParseExp(b []byte) (Exp, int) {
 	// exp
 	//     ""
 	//     'E' sign digits
 	//     'e' sign digits
 
-	ret := &Exp{
-		Node: Node{
-			Type:   TypeExp,
-			Parent: nil, // todo
-
-		},
-	}
-
 	if len(b) == 0 ||
 		(b[0] != 'e' && b[0] != 'E') {
-		return ret, 0
+		return nil, 0 // empty string satisfies exp
 	}
 
 	c := 1 // we've [c]onsumed 'e'
-	sign, consumed := ParseSign(b[c:])
-	ret.sign = sign // todo why can't i do ret.Sign, consumed := ParseSign(b[c:])
-
-	if consumed == 0 {
-		return ret, 0
-	}
+	_, consumed := ParseSign(b[c:])
 	c += consumed
 
 	_, consumed, err := ParseDigits(b[c:])
 	if err != nil {
-		return ret, 0
+		return nil, 0 // must have valid digits
 	}
 	c += consumed
 
-	ret.b = b[0:c]
-	return ret, c
+	return b[0:c], c
 }
 
 // todo rename parse functions to consume and create interface{} Consumer... easier to test
-type Sign struct{ Node }
+type Sign []byte
 
-func (s *Sign) Positive() bool { return len(s.b) != 1 || s.b[0] == '+' }
+func (s Sign) Positive() bool { return len(s) != 1 || s[0] == '+' }
 
-func ParseSign(b []byte) (*Sign, int) {
+func ParseSign(b []byte) (Sign, int) {
 	// sign
 	//     ""
 	//     '+'
 	//     '-'
 
-	ret := &Sign{Node: Node{
-		Type:   TypeSign,
-		Parent: nil, // todo
-	}}
-
 	if len(b) == 0 ||
 		(b[0] != '+' && b[0] != '-') {
-		return ret, 0
+		return nil, 0
 	}
 
-	ret.b = b[:1]
-
-	return ret, 1
+	return b[:1], 1
 }
 
-type Frac struct{ Node }
+type Frac []byte
 
-func (f *Frac) Float64() float64 {
+func (f Frac) Float64() float64 {
 	// ParseFrac doesn't return error but can return b=empty string
 	// so this should return 0 for the fraction part
-	if len(f.b) == 0 {
+	if len(f) == 0 {
 		return float64(0)
 	}
 
-	ret, err := strconv.ParseFloat(string(f.b), 64)
+	ret, err := strconv.ParseFloat(string(f), 64)
 	if err != nil {
 		// then we did not parse float correctly
 		panic(err)
@@ -559,29 +517,23 @@ func (f *Frac) Float64() float64 {
 	return ret
 }
 
-func ParseFrac(b []byte) (*Frac, int) {
+func ParseFrac(b []byte) (Frac, int) {
 	// frac
 	//     ""
 	//     '.' digits
 
-	ret := &Frac{Node: Node{
-		Type:   TypeFrac,
-		Parent: nil, // todo
-	}}
-
 	if len(b) == 0 || b[0] != '.' {
-		return ret, 0
+		return nil, 0
 	}
 	c := 1 // we've consumed the '.'
 
-	_, consumed, err := ParseDigits(b[c:]) // TODO: think: don't return []byte, just return how much ParseDigit consumed
+	_, consumed, err := ParseDigits(b[c:])
 	if err != nil {
-		return ret, 0
+		return nil, 0
 	}
 
 	c += consumed
-	ret.b = b[0:c]
-	return ret, c
+	return b[0:c], c
 }
 
 func IsDigit(c byte) bool {
@@ -619,8 +571,6 @@ func ParseCharacters(b []byte) ([]byte, int) {
 
 	return b[:c], c
 }
-
-// type Character struct{ Node }
 
 // I've made sure that all Parse functions that return *Something doesn't return nil
 // This is a contract that should be documented somewhere. But I wonder, should we
@@ -668,9 +618,9 @@ func ParseCharacter(b []byte) ([]byte, int, error) {
 	return nil, 0, ErrInvalidCharacter
 }
 
-type Escape struct{ Node }
+type Escape []byte
 
-func ParseEscape(b []byte) (*Escape, int, error) {
+func ParseEscape(b []byte) (Escape, int, error) {
 	// escape
 	//     '"'
 	//     '\'
@@ -681,21 +631,15 @@ func ParseEscape(b []byte) (*Escape, int, error) {
 	//     't'
 	//     'u' hex hex hex hex
 
-	ret := &Escape{Node: Node{
-		Type:   TypeEscape,
-		Parent: nil, // todo
-	}}
-
 	if len(b) == 0 {
-		return ret, 0, ErrNothingToParse
+		return nil, 0, ErrNothingToParse
 	}
 
 SWITCH:
 	switch b[0] {
 	// '\\' is single backslash character
 	case '"', '\\', '/', 'b', 'n', 'r', 't':
-		ret.b = b[:1]
-		return ret, 1, nil
+		return b[:1], 1, nil
 	case 'u':
 		if len(b) < 5 {
 			break // not enough hex to consume
@@ -705,27 +649,21 @@ SWITCH:
 				break SWITCH
 			}
 		}
-		ret.b = b[:5]
-		return ret, 5, nil
+		return b[:5], 5, nil
 	}
 
-	return ret, 0, ErrInvalidEscape
+	return nil, 0, ErrInvalidEscape
 }
 
-type Whitespace struct{ Node }
+type Whitespace []byte
 
-func ParseWhitespace(b []byte) (*Whitespace, int) {
+func ParseWhitespace(b []byte) (Whitespace, int) {
 	// ws
 	//     ""
 	//     '0009' ws
 	//     '000a' ws
 	//     '000d' ws
 	//     '0020' ws
-
-	ret := &Whitespace{Node: Node{
-		Type:   TypeWhitespace,
-		Parent: nil, // todo
-	}}
 
 	var n int
 
@@ -743,16 +681,16 @@ FOR:
 	// TODO for range loop doesn't incrememnt on the last loop?
 	// for i, ws := range b{} if len(b)== 10 then i should be 10?
 
-	ret.b = b[:n]
-	return ret, n
+	return b[:n], n
 }
 
 // [wip] Digits satisfies the json.org language spec for both digit and digits
 
-type Digits struct{ Node }
+type Digits []byte
 
-func (d *Digits) Int() uint64 {
-	ret, err := strconv.ParseUint(string(d.b), 10, 64)
+func (d Digits) Int() uint64 {
+	// todo is there bytes.parseuint ?
+	ret, err := strconv.ParseUint(string(d), 10, 64)
 	if err != nil {
 		// then we did not parse digits correctly
 		panic(err) // or better safe then sorry?... return 0
@@ -763,24 +701,19 @@ func (d *Digits) Int() uint64 {
 
 //  ParseDigits returns b[0:x] such that every ascii value from b[0]
 //  to b[x] represents a digit from 0 to 9, along with the length of b[0:x]
-func ParseDigits(b []byte) (*Digits, int, error) {
+func ParseDigits(b []byte) (Digits, int, error) {
 
 	// digits
 	//     digit
 	//     digit digits
 
-	ret := &Digits{Node: Node{
-		Type:   TypeDigits,
-		Parent: nil, // todo
-	}}
-
 	if len(b) == 0 {
-		return ret, 0, ErrNothingToParse
+		return nil, 0, ErrNothingToParse
 	}
 
 	// check first digit
 	if !IsDigit(b[0]) {
-		return ret, 0, ErrInvalidDigit
+		return nil, 0, ErrInvalidDigit
 	}
 
 	// consume as many digits as possible
@@ -788,13 +721,11 @@ func ParseDigits(b []byte) (*Digits, int, error) {
 		if IsDigit(d) {
 			continue
 		}
-		ret.b = b[0:i]
-		return ret, i, nil
+		return b[0:i], i, nil
 	}
 
 	// we've consumed everything we return the whole slice back
-	ret.b = b
-	return ret, len(b), nil
+	return b, len(b), nil
 }
 
 func IsHex(b byte) bool {

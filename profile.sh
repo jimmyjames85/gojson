@@ -1,7 +1,8 @@
 #!/bin/bash
+rm -rf /tmp/profile*
 rm -f ./gj
 go build -o ./gj cmd/gj/main.go
-./gj
+./gj > /dev/null 2>&1
 
 # echo file is at: $thefile
 # now=`date +%s`
