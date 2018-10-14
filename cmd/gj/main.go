@@ -9,24 +9,53 @@ import (
 	"github.com/pkg/profile"
 )
 
-func traverse(byts []byte) {
-	j, _, err := gojson.ParseJSON(byts)
-	must.BeNil(err)
-	fmt.Printf("%d", j.Value.Type)
+// todo move this into gojson package...
+func Walk(prefix string, v gojson.Value) {
 
-	arr, err := j.Value.Array()
-	if err != nil {
-		fmt.Printf("not an array: %s", err.Error())
+	switch v.Type() {
+	case gojson.ObjectType:
+		val := v.Object()
+		for k, v := range val {
+			prfx := fmt.Sprintf("%s:%s", prefix, k)
+			fmt.Printf("%s\n", prfx)
+			Walk(prfx, v)
+		}
+	case gojson.ArrayType:
+		val := v.Array()
+		for _, v := range val {
+			// todo decend into object if it is one...
+			prfx := fmt.Sprintf("%s:%s", prefix, v.B())
+			fmt.Printf("%s\n", prfx)
+			Walk(prfx, v)
+		}
+	case gojson.StringType:
+	case gojson.NumberType:
+	case gojson.BooleanType:
+	case gojson.NullType:
+	}
+}
+
+func traverse(byts []byte) {
+	j, err := gojson.ParseJSON(byts)
+	must.BeNil(err)
+	fmt.Printf("%s: %d\n", j.Type(), len(j.B()))
+
+	arr := j.Array()
+	if arr == nil {
+		fmt.Printf("not an array maybe? I didn't check tht ey  type ... shame: %s\n", j.Type())
 		return
 	}
 
-	for _, elem := range arr {
-		fmt.Printf("%d: %d\n", elem.Value.Type, len(elem.Value.String()))
+	for _, val := range arr {
+		fmt.Printf("%s: %d\n", val.Type(), len(val.B()))
+		Walk("", val)
+		fmt.Printf("\n\n")
 	}
 
 }
 
 func main() {
+
 	example := must.ReadFile("example.json")
 
 	if len(os.Args) > 1 && os.Args[1] == "-t" {
@@ -45,13 +74,10 @@ func main() {
 	}
 	for i := 0; i < iter; i++ {
 
-		b, size, err := gojson.ParseJSON(example)
+		val, err := gojson.ParseJSON(example)
 		must.BeNil(err)
-		if len(example) != size {
-			panic(fmt.Sprintf("example size[%d] is different than parsed size[%d]", len(example), size))
-		}
 		if !silent {
-			fmt.Printf("%s\n", b.Value.String())
+			fmt.Printf("%s\n", val.B())
 		}
 
 	}

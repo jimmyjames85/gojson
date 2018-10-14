@@ -9,19 +9,19 @@ import (
 
 // https://www.json.org/
 
-type ValueType int
+type ValueType string
 
 const (
-	ObjectType ValueType = iota
-	ArrayType
-	StringType
-	NumberType
-	BooleanType
-	NullType
+	ObjectType  ValueType = "object"
+	ArrayType   ValueType = "array"
+	StringType  ValueType = "string"
+	NumberType  ValueType = "number"
+	BooleanType ValueType = "boolean"
+	NullType    ValueType = "null" // todo rename to unknown since null satisfies obj and arr, and maybe string
 )
 
 var (
-	ErrEOF                       = fmt.Errorf("EOf")
+	ErrEOF                       = fmt.Errorf("EOF")
 	ErrInvalidCharacter          = fmt.Errorf("invalid character")
 	ErrInvalidDigit              = fmt.Errorf("invalid digit")
 	ErrInvalidNull               = fmt.Errorf("invalid null")
@@ -33,6 +33,8 @@ var (
 	ErrInvalidObjectClose        = fmt.Errorf("invalid object: expecting '}'")
 	ErrInvalidMemberMissingSep   = fmt.Errorf("invalid member: expecting ':'")
 	ErrInvalidArray              = fmt.Errorf("invalid array")
+	ErrInvalidString             = fmt.Errorf("invalid string")
+	ErrInvalidJSON               = fmt.Errorf("invalid json")
 	ErrInvalidArrayOpen          = fmt.Errorf("invalid array: expecting '['")
 	ErrInvalidArrayClose         = fmt.Errorf("invalid array: expecting ']'")
 	ErrInvalidStringOpen         = fmt.Errorf(`invalid string: missing beginnig '"'`)
@@ -47,45 +49,75 @@ var (
 	NullValue  = []byte(`null`)
 )
 
-type JSON Element
-
-func ParseJSON(b []byte) (JSON, int, error) {
-	// TODO add unit test for this...
-
+func ParseJSON(b []byte) (Value, error) {
 	// json
 	//     element
 
-	element, c, err := ParseElement(b)
+	// TODO add unit test for this...
+	e, _, err := ParseElement(b)
 	if err != nil {
-		return JSON{}, 0, err
+		return Value{}, ErrInvalidJSON
 	}
 
-	return JSON(element), c, nil
-
+	return e.Value, nil
 }
 
 type Value struct {
-	Type  ValueType
+	typ   ValueType
 	b     []byte
 	value interface{}
 }
 
+func (v *Value) Type() ValueType {
+	return v.typ
+}
+
+func (v *Value) Object() map[string]Value {
+	if obj, ok := v.value.(Object); ok {
+		return obj.Values()
+	}
+	return nil
+}
+
+func (v *Value) Array() []Value {
+	if arr, ok := v.value.(Array); ok {
+		return arr.Values()
+	}
+	return nil
+}
+
+func (v *Value) B() []byte {
+	// The number of elements copied is the minimum of len(src) and len(dst).
+	ret := make([]byte, len(v.b))
+	// copy(src, dst)
+	copy(ret, v.b)
+	return ret
+}
+
 func (v *Value) String() string {
-	return fmt.Sprintf(string(v.b))
+	if str, ok := v.value.(String); ok {
+		return string(str.WithoutQuotes())
+	}
+	return ""
 }
 
-func (v *Value) Object() (Object, error) {
-	if v.Type == ObjectType {
-		return v.value.(Object), nil
+func (v *Value) Number() Number {
+	if num, ok := v.value.(Number); ok {
+		return num
 	}
-	return Object{}, ErrInvalidObject
+	return Number{}
 }
 
-func (v *Value) Array() (Array, error) {
-	if v.Type == ArrayType {
-		return v.value.(Array), nil
+func (v *Value) Boolean() bool {
+	if b, ok := v.value.(Boolean); ok {
+		return b.Bool()
 	}
-	return Array{}, ErrInvalidArray
+	return false
+}
+
+func (v *Value) IsNull() bool {
+	_, isnull := v.value.(Null)
+	return isnull
 }
 
 // type value needs to indicate object array string number true, false, or null
@@ -113,32 +145,32 @@ func ParseValue(b []byte) (Value, int, error) {
 
 	obj, c, err := ParseObject(b)
 	if err == nil {
-		return Value{Type: ObjectType, b: b[:c], value: obj}, c, nil
+		return Value{typ: ObjectType, b: b[:c], value: obj}, c, nil
 	}
 
 	arr, c, err := ParseArray(b)
 	if err == nil {
-		return Value{Type: ArrayType, b: b[:c], value: arr}, c, nil
+		return Value{typ: ArrayType, b: b[:c], value: arr}, c, nil
 	}
 
 	str, c, err := ParseString(b)
 	if err == nil {
-		return Value{Type: StringType, b: b[:c], value: str}, c, nil
+		return Value{typ: StringType, b: b[:c], value: str}, c, nil
 	}
 
 	num, c, err := ParseNumber(b)
 	if err == nil {
-		return Value{Type: NumberType, b: b[:c], value: num}, c, nil
+		return Value{typ: NumberType, b: b[:c], value: num}, c, nil
 	}
 
 	boolean, c, err := ParseBoolean(b)
 	if err == nil {
-		return Value{Type: BooleanType, b: b[:c], value: boolean}, c, nil
+		return Value{typ: BooleanType, b: b[:c], value: boolean}, c, nil
 	}
 
 	null, c, err := ParseNull(b)
 	if err == nil {
-		return Value{Type: NullType, b: b[:c], value: null}, c, nil
+		return Value{typ: NullType, b: b[:c], value: null}, c, nil
 	}
 
 	return Value{}, 0, ErrUnsupported
@@ -164,6 +196,10 @@ func ParseNull(b []byte) (Null, int, error) {
 
 type Boolean []byte
 
+func (b Boolean) Bool() bool {
+	return bytes.Equal(b, TrueValue)
+}
+
 func ParseBoolean(b []byte) (Boolean, int, error) {
 	// boolean is not a json.org 'named' value (such as string or number), but satisfies the "false" and/or "true" value
 	//
@@ -183,6 +219,14 @@ func ParseBoolean(b []byte) (Boolean, int, error) {
 }
 
 type Object map[string]Element
+
+func (o Object) Values() map[string]Value {
+	ret := make(map[string]Value, len(o))
+	for k, v := range o {
+		ret[k] = v.Value
+	}
+	return ret
+}
 
 func ParseObject(b []byte) (Object, int, error) {
 	// object
@@ -294,6 +338,14 @@ func ParseMember(b []byte) (Member, int, error) {
 }
 
 type Array []Element
+
+func (a Array) Values() []Value {
+	ret := make([]Value, len(a))
+	for i, e := range a {
+		ret[i] = e.Value
+	}
+	return ret
+}
 
 func ParseArray(b []byte) (Array, int, error) {
 	// array
@@ -435,13 +487,12 @@ func (n Number) Int() (int64, error) {
 	return 0, ErrParseInteger // TODO is this even being used?
 }
 
-func (n Number) Float64() float64 {
-	ret, err := strconv.ParseFloat(string(n), 64)
-	if err != nil {
-		// then we did not parse digits correctly
-		panic(err) // todo how do return message that makes sense, when we ParsedDigits there was an error that you ignored
-	}
-	return ret
+func (n Number) Float64() (float64, error) {
+	return strconv.ParseFloat(string(n), 64)
+}
+
+func (n Number) String() string {
+	return string(n)
 }
 
 func ParseNumber(b []byte) (Number, int, error) {
