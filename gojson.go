@@ -28,9 +28,11 @@ var (
 	ErrInvalidBoolean            = fmt.Errorf("invalid boolean")
 	ErrInvalidEscape             = fmt.Errorf("invalid escape")
 	ErrInvalidCharacterRuneError = fmt.Errorf("invalid character: rune error")
+	ErrInvalidObject             = fmt.Errorf("invalid object")
 	ErrInvalidObjectOpen         = fmt.Errorf("invalid object: expecting '{'")
 	ErrInvalidObjectClose        = fmt.Errorf("invalid object: expecting '}'")
 	ErrInvalidMemberMissingSep   = fmt.Errorf("invalid member: expecting ':'")
+	ErrInvalidArray              = fmt.Errorf("invalid array")
 	ErrInvalidArrayOpen          = fmt.Errorf("invalid array: expecting '['")
 	ErrInvalidArrayClose         = fmt.Errorf("invalid array: expecting ']'")
 	ErrInvalidStringOpen         = fmt.Errorf(`invalid string: missing beginnig '"'`)
@@ -45,28 +47,49 @@ var (
 	NullValue  = []byte(`null`)
 )
 
-func ParseJSON(b []byte) ([]byte, int, error) {
+type JSON Element
+
+func ParseJSON(b []byte) (JSON, int, error) {
 	// TODO add unit test for this...
 
 	// json
 	//     element
 
-	_, c, err := ParseElement(b)
+	element, c, err := ParseElement(b)
 	if err != nil {
-		return nil, 0, err
+		return JSON{}, 0, err
 	}
 
-	return b[:c], c, nil
+	return JSON(element), c, nil
 
 }
 
 type Value struct {
-	Type ValueType
-	b    []byte
+	Type  ValueType
+	b     []byte
+	value interface{}
+}
+
+func (v *Value) String() string {
+	return fmt.Sprintf(string(v.b))
+}
+
+func (v *Value) Object() (Object, error) {
+	if v.Type == ObjectType {
+		return v.value.(Object), nil
+	}
+	return Object{}, ErrInvalidObject
+}
+
+func (v *Value) Array() (Array, error) {
+	if v.Type == ArrayType {
+		return v.value.(Array), nil
+	}
+	return Array{}, ErrInvalidArray
 }
 
 // type value needs to indicate object array string number true, false, or null
-func ParseValue(b []byte) ([]byte, int, error) {
+func ParseValue(b []byte) (Value, int, error) {
 	// value
 	//     object
 	//     array
@@ -79,7 +102,7 @@ func ParseValue(b []byte) ([]byte, int, error) {
 	// TODO add unit test for this...
 
 	if len(b) == 0 {
-		return nil, 0, ErrEOF
+		return Value{}, 0, ErrEOF
 	}
 
 	// TODO is this preformant? we attempt each type and rescan on
@@ -88,37 +111,37 @@ func ParseValue(b []byte) ([]byte, int, error) {
 	// TODO order of Parse func matters, e.g. I assume null is not
 	// used frequently so we call it last
 
-	_, c, err := ParseObject(b)
+	obj, c, err := ParseObject(b)
 	if err == nil {
-		return b[:c], c, nil
+		return Value{Type: ObjectType, b: b[:c], value: obj}, c, nil
 	}
 
-	_, c, err = ParseArray(b)
+	arr, c, err := ParseArray(b)
 	if err == nil {
-		return b[:c], c, nil
+		return Value{Type: ArrayType, b: b[:c], value: arr}, c, nil
 	}
 
-	_, c, err = ParseString(b)
+	str, c, err := ParseString(b)
 	if err == nil {
-		return b[:c], c, nil
+		return Value{Type: StringType, b: b[:c], value: str}, c, nil
 	}
 
-	_, c, err = ParseNumber(b)
+	num, c, err := ParseNumber(b)
 	if err == nil {
-		return b[:c], c, nil
+		return Value{Type: NumberType, b: b[:c], value: num}, c, nil
 	}
 
-	_, c, err = ParseBoolean(b)
+	boolean, c, err := ParseBoolean(b)
 	if err == nil {
-		return b[:c], c, nil
+		return Value{Type: BooleanType, b: b[:c], value: boolean}, c, nil
 	}
 
-	_, c, err = ParseNull(b)
+	null, c, err := ParseNull(b)
 	if err == nil {
-		return b[:c], c, nil
+		return Value{Type: NullType, b: b[:c], value: null}, c, nil
 	}
 
-	return nil, 0, ErrUnsupported
+	return Value{}, 0, ErrUnsupported
 }
 
 // if a value is null it doesn't give us any information about the type e.g. it could be an array or an object
@@ -338,24 +361,28 @@ func ParseElements(b []byte) (Elements, int, error) {
 	return ret, c, nil
 }
 
-type Element []byte // todo remove whitespace
+type Element struct {
+	PreWS  Whitespace
+	Value  Value
+	PostWS Whitespace
+}
 
 func ParseElement(b []byte) (Element, int, error) {
 	// element
 	//     ws value ws
 
-	_, c := ParseWhitespace(b)
+	pre, c := ParseWhitespace(b)
 
-	_, consumed, err := ParseValue(b[c:])
+	val, consumed, err := ParseValue(b[c:])
 	if err != nil {
-		return nil, 0, err
+		return Element{}, 0, err
 	}
 	c += consumed
 
-	_, consumed = ParseWhitespace(b[c:])
+	post, consumed := ParseWhitespace(b[c:])
 	c += consumed
 
-	return b[:c], c, nil
+	return Element{PreWS: pre, Value: val, PostWS: post}, c, nil
 }
 
 type String []byte
