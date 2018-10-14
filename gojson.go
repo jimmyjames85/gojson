@@ -51,8 +51,19 @@ func ParseJSON(b []byte) ([]byte, int, error) {
 
 }
 
+type Value []byte
+
 // type value needs to indicate object array string number true, false, or null
-func ParseValue(b []byte) ([]byte, int, error) {
+func ParseValue(b []byte) (Value, int, error) {
+	// value
+	//     object
+	//     array
+	//     string
+	//     number
+	//     "true"
+	//     "false"
+	//     "null"
+
 	// TODO add unit test for this...
 
 	if len(b) == 0 {
@@ -136,7 +147,9 @@ func ParseBoolean(b []byte) (Boolean, int, error) {
 	return nil, 0, ErrInvalidBoolean
 }
 
-func ParseObject(b []byte) ([]byte, int, error) {
+type Object Value // todo map[string]Element
+
+func ParseObject(b []byte) (Object, int, error) {
 	// object
 	//     '{' ws '}'
 	//     '{' members '}'
