@@ -14,17 +14,36 @@ type JsonType int
 const (
 	TypeString JsonType = iota
 	TypeNumber
-	TypeCharacter
 	TypeObject
 	TypeFrac
 	TypeArray
 	TypeElement
+	TypeElements
 	TypeExp
 	TypeSign
 	TypeDigits
 	TypeInt
 	TypeWhitespace
 	TypeEscape
+)
+
+var (
+	ErrNothingToParse            = fmt.Errorf("nothing to parse")
+	ErrInvalidCharacter          = fmt.Errorf("invalid character")
+	ErrInvalidDigit              = fmt.Errorf("invalid digit")
+	ErrInvalidEscape             = fmt.Errorf("invalid escape")
+	ErrInvalidCharacterRuneError = fmt.Errorf("invalid character: rune error")
+	ErrInvalidObjectOpen         = fmt.Errorf("invalid object: expecting '{'")
+	ErrInvalidObjectClose        = fmt.Errorf("invalid object: expecting '}'")
+	ErrInvalidMemberMissingSep   = fmt.Errorf("invalid member: expecting ':'")
+	ErrInvalidArrayOpen          = fmt.Errorf("invalid array: expecting '['")
+	ErrInvalidArrayClose         = fmt.Errorf("invalid array: expecting ']'")
+	ErrInvalidStringOpen         = fmt.Errorf(`invalid string: missing beginnig '"'`)
+	ErrInvalidStringClose        = fmt.Errorf(`invalid string: missing ending '"'`)
+	ErrUnexpectedChar            = fmt.Errorf("unexpected char")
+	ErrParseInteger              = fmt.Errorf("parse error: not an integer")
+
+	ErrUnsupported = fmt.Errorf("unsupported: should we panic") // todo
 )
 
 type Node struct {
@@ -55,7 +74,7 @@ func ParseValue(b []byte) ([]byte, int, error) {
 	// TODO add unit test for this...
 
 	if len(b) == 0 {
-		return nil, 0, fmt.Errorf("nothing to parse")
+		return nil, 0, ErrNothingToParse
 	}
 
 	if bytes.HasPrefix(b, []byte(`true`)) {
@@ -87,8 +106,7 @@ func ParseValue(b []byte) ([]byte, int, error) {
 		return b[:c], c, nil
 	}
 
-	return nil, 0, fmt.Errorf("todo: unsported")
-
+	return nil, 0, ErrUnsupported
 }
 
 func ParseObject(b []byte) ([]byte, int, error) {
@@ -98,7 +116,7 @@ func ParseObject(b []byte) ([]byte, int, error) {
 
 	// copy/pasta from ParseArray
 	if len(b) == 0 || b[0] != '{' {
-		return nil, 0, fmt.Errorf("invalid Object: expecting '{'")
+		return nil, 0, ErrInvalidObjectOpen
 	}
 	c := 1 // consume the '{'
 
@@ -124,7 +142,7 @@ func ParseObject(b []byte) ([]byte, int, error) {
 		return b[:c], c, nil
 	}
 
-	return nil, 0, fmt.Errorf("invalid object: expecting '}'")
+	return nil, 0, ErrInvalidObjectClose
 }
 
 func ParseMembers(b []byte) ([]byte, int, error) {
@@ -177,13 +195,13 @@ func ParseMember(b []byte) ([]byte, int, error) {
 
 	// noMoreToConsume || next unconsumed byte is not ':'  TODO make this if stmt a func... if !nextCharIs(b[c:], ':')
 	if len(b[c:]) == 0 || b[c:][0] != ':' {
-		return nil, 0, fmt.Errorf("expecting ':' %s", b[c:])
+		return nil, 0, ErrInvalidMemberMissingSep
 	}
 	c += 1 // consume the ':'
 
 	_, consumed, err = ParseElement(b[c:])
 	if err != nil {
-		return nil, 0, fmt.Errorf("expecting element")
+		return nil, 0, err
 	}
 	c += consumed
 
@@ -196,7 +214,7 @@ func ParseArray(b []byte) ([]byte, int, error) {
 	//     '[' elements ']'
 
 	if len(b) == 0 || b[0] != '[' {
-		return nil, 0, fmt.Errorf("invalid array: expecting '['")
+		return nil, 0, ErrInvalidArrayOpen
 	}
 	c := 1 // consume the '['
 
@@ -222,24 +240,32 @@ func ParseArray(b []byte) ([]byte, int, error) {
 		return b[:c], c, nil
 	}
 
-	return nil, 0, fmt.Errorf("invalid array: expecting ']'")
+	return nil, 0, ErrInvalidArrayClose
 }
 
-func ParseElements(b []byte) ([]byte, int, error) {
+type Elements struct{ Node }
+
+func ParseElements(b []byte) (*Elements, int, error) {
 	// elements
 	//     element
 	//     element ',' elements
 
+	ret := &Elements{Node: Node{
+		Type:   TypeElements,
+		Parent: nil, //todo
+	}}
+
 	_, consumed, err := ParseElement(b)
 	if err != nil {
 		// must parse at least one element
-		return nil, 0, err
+		return ret, 0, err
 	}
 
 	c := consumed
 	// noMoreToConsume || next unconsumed byte is not ','
 	if len(b[c:]) == 0 || b[c:][0] != ',' {
-		return b[:c], c, nil
+		ret.b = b[:c]
+		return ret, c, nil
 	}
 	c++ // consume the ','
 
@@ -247,18 +273,18 @@ func ParseElements(b []byte) ([]byte, int, error) {
 	// how many elements in a json 'list' we can support
 	_, consumed, err = ParseElements(b[c:])
 	if err != nil {
-		c-- // don't unconsume the ',' just the first element
-		return b[:c], c, nil
+		c-- // unconsume the ','
+		ret.b = b[:c]
+		return ret, c, nil
 	}
 
 	c += consumed
-	return b[:c], c, nil
+
+	ret.b = b[:c]
+	return ret, c, nil
 }
 
 type Element struct{ Node }
-
-// todo todo todo todo JIM start here tomorrow
-// todo a func(e *Element) Value() returns Value w/o whitespace
 
 func ParseElement(b []byte) (*Element, int, error) {
 	// element
@@ -297,11 +323,11 @@ func ParseString(b []byte) (*String, int, error) {
 
 	if len(b) < 2 {
 		// need at least two double quotes
-		return ret, 0, fmt.Errorf("nothing to parse")
+		return ret, 0, ErrNothingToParse
 	}
 
 	if b[0] != '"' {
-		return ret, 0, fmt.Errorf("invalid char: expecting quote")
+		return ret, 0, ErrInvalidStringOpen
 	}
 
 	c := 1 // we've consumed the first double quote
@@ -311,12 +337,12 @@ func ParseString(b []byte) (*String, int, error) {
 
 	// noMoreToConsume
 	if len(b[c:]) == 0 {
-		return ret, 0, fmt.Errorf("EOF")
+		return ret, 0, ErrNothingToParse
 	}
 
 	// next unconsumed byte is not '"'
 	if b[c:][0] != '"' {
-		return ret, 0, fmt.Errorf("invalid char: expecting quote")
+		return ret, 0, ErrInvalidStringClose
 	}
 
 	c += 1 // consume final quote
@@ -332,7 +358,7 @@ func (n *Number) Int() (int64, error) {
 	if d == -1 {
 		return strconv.ParseInt(string(n.b), 10, 64)
 	}
-	return 0, fmt.Errorf("not an integer")
+	return 0, ErrParseInteger // TODO is this even being used?
 }
 
 func (n *Number) Float64() float64 {
@@ -397,7 +423,7 @@ func ParseInt(b []byte) (*Int, int, error) {
 	}}
 
 	if len(b) == 0 {
-		return ret, 0, fmt.Errorf("nothing to parse")
+		return ret, 0, ErrNothingToParse
 	}
 
 	if b[0] == '0' {
@@ -416,11 +442,11 @@ func ParseInt(b []byte) (*Int, int, error) {
 	}
 
 	if b[0] != '-' {
-		return ret, 0, fmt.Errorf("unexpected char")
+		return ret, 0, ErrUnexpectedChar
 	}
 
 	if len(b) > 1 && b[1] == '-' {
-		return ret, 0, fmt.Errorf("unexpected char")
+		return ret, 0, ErrUnexpectedChar
 	}
 
 	_, consumed, err := ParseInt(b[1:])
@@ -587,37 +613,33 @@ func ParseCharacters(b []byte) ([]byte, int) {
 	return b[:c], c
 }
 
-type Character struct{ Node }
+// type Character struct{ Node }
 
 // I've made sure that all Parse functions that return *Something doesn't return nil
 // This is a contract that should be documented somewhere. But I wonder, should we
 // return non-pointer... need to see impact on heap vs stack memory allocation, garbage collection, speed
-func ParseCharacter(b []byte) (*Character, int, error) {
+func ParseCharacter(b []byte) ([]byte, int, error) {
 	// character
 	//     '0020' . '10ffff' - '"' - '\'
 	//     '\' escape
 
-	ret := &Character{Node: Node{
-		Type:   TypeCharacter,
-		Parent: nil, // todo
-	}}
+	// most time is spent inside this function so we should avoid mallocs
 
 	if len(b) == 0 {
-		return ret, 0, fmt.Errorf("nothing to parse")
+		return nil, 0, ErrNothingToParse
 	}
 
 	if b[0] == '\\' { // single backslash character
 		_, consumed, err := ParseEscape(b[1:])
 		if err != nil {
-			return ret, 0, fmt.Errorf("invalid character")
+			return nil, 0, ErrInvalidCharacter
 		}
 		consumed += 1 // we consumed the backslash
-		ret.b = b[:consumed]
-		return ret, consumed, nil
+		return b[:consumed], consumed, nil
 	}
 
 	if b[0] == '"' {
-		return ret, 0, fmt.Errorf("invalid character")
+		return nil, 0, ErrInvalidCharacter
 	}
 
 	// 0x10ffff overflows the length of a byte
@@ -629,15 +651,14 @@ func ParseCharacter(b []byte) (*Character, int, error) {
 	// size is the size of the rune in bytes
 
 	if r == utf8.RuneError {
-		return ret, 0, fmt.Errorf("invalid char: Rune Error")
+		return nil, 0, ErrInvalidCharacterRuneError
 	}
 
 	if 0x0020 <= r && r <= 0x10ffff {
-		ret.b = b[:size]
-		return ret, size, nil
+		return b[:size], size, nil
 	}
 
-	return ret, 0, fmt.Errorf("invalid char")
+	return nil, 0, ErrInvalidCharacter
 }
 
 type Escape struct{ Node }
@@ -659,7 +680,7 @@ func ParseEscape(b []byte) (*Escape, int, error) {
 	}}
 
 	if len(b) == 0 {
-		return ret, 0, fmt.Errorf("nothing to parse")
+		return ret, 0, ErrNothingToParse
 	}
 
 SWITCH:
@@ -681,7 +702,7 @@ SWITCH:
 		return ret, 5, nil
 	}
 
-	return ret, 0, fmt.Errorf("Invalid escape")
+	return ret, 0, ErrInvalidEscape
 }
 
 type Whitespace struct{ Node }
@@ -747,12 +768,12 @@ func ParseDigits(b []byte) (*Digits, int, error) {
 	}}
 
 	if len(b) == 0 {
-		return ret, 0, fmt.Errorf("nothing to parse")
+		return ret, 0, ErrNothingToParse
 	}
 
 	// check first digit
 	if !IsDigit(b[0]) {
-		return ret, 0, fmt.Errorf("first byte must be a digit")
+		return ret, 0, ErrInvalidDigit
 	}
 
 	// consume as many digits as possible
