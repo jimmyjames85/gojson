@@ -581,10 +581,12 @@ func ParseCharacters(b []byte) ([]byte, int) {
 		return nil, 0
 	}
 
-	_, consumed := ParseCharacters(b[c:])
-	for consumed > 0 {
+	for err == nil {
+		_, consumed, err := ParseCharacter(b[c:])
+		if err != nil {
+			break
+		}
 		c += consumed
-		_, consumed = ParseCharacters(b[c:])
 	}
 
 	return b[:c], c
