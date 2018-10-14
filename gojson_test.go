@@ -718,7 +718,22 @@ func TestParseString(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "only one quote",
+			name:    "one quote",
+			input:   []byte(`"`),
+			wantErr: true,
+		},
+		{
+			name:     "two quotes",
+			input:    []byte(`""`),
+			expected: []byte(`""`),
+		},
+		{
+			name:    "no empty space allowed",
+			input:   []byte(` "jimbo"`),
+			wantErr: true,
+		},
+		{
+			name:    "beginning quote only",
 			input:   []byte(`"oh we started of soo good`),
 			wantErr: true,
 		},

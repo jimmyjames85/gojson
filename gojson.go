@@ -12,7 +12,7 @@ import (
 type JsonType int
 
 var (
-	ErrNothingToParse            = fmt.Errorf("nothing to parse")
+	ErrEOF                       = fmt.Errorf("EOf")
 	ErrInvalidCharacter          = fmt.Errorf("invalid character")
 	ErrInvalidDigit              = fmt.Errorf("invalid digit")
 	ErrInvalidNull               = fmt.Errorf("invalid null")
@@ -67,7 +67,7 @@ func ParseValue(b []byte) (Value, int, error) {
 	// TODO add unit test for this...
 
 	if len(b) == 0 {
-		return nil, 0, ErrNothingToParse
+		return nil, 0, ErrEOF
 	}
 
 	// TODO is this preformant? we attempt each type and rescan on
@@ -168,7 +168,7 @@ func ParseObject(b []byte) (Object, int, error) {
 		// we have empty object
 		return b[:c], c, nil
 	}
-	c -= consumed // unconsume whitespace and let it be part of elements
+	c -= consumed // unconsume the whitespace and let it be part of elements
 
 	_, consumed, err := ParseMembers(b[c:])
 	if err != nil {
@@ -326,13 +326,23 @@ func ParseElement(b []byte) (Element, int, error) {
 
 type String []byte
 
+// String returns the string without the surrounding quotes
+func (s String) String() string {
+	l := len(s)
+	if l < 2 {
+		return ""
+		// this should panic
+	}
+	return string(s[1 : l-1]) // this could get expensive...
+}
+
 func ParseString(b []byte) (String, int, error) {
 	// string
 	//     '"' characters '"'
 
-	if len(b) < 2 {
+	if len(b) == 0 {
 		// need at least two double quotes
-		return nil, 0, ErrNothingToParse
+		return nil, 0, ErrEOF
 	}
 
 	if b[0] != '"' {
@@ -344,13 +354,8 @@ func ParseString(b []byte) (String, int, error) {
 	_, consumed := ParseCharacters(b[c:])
 	c += consumed
 
-	// noMoreToConsume
-	if len(b[c:]) == 0 {
-		return nil, 0, ErrNothingToParse
-	}
-
-	// next unconsumed byte is not '"'
-	if b[c:][0] != '"' {
+	// noMoreToConsume next unconsumed byte is not '"'
+	if len(b[c:]) == 0 || b[c:][0] != '"' {
 		return nil, 0, ErrInvalidStringClose
 	}
 
@@ -421,7 +426,7 @@ func ParseInt(b []byte) (Int, int, error) {
 	// note: int cannot have a '+' sign
 
 	if len(b) == 0 {
-		return nil, 0, ErrNothingToParse
+		return nil, 0, ErrEOF
 	}
 
 	if b[0] == '0' {
@@ -596,7 +601,7 @@ func ParseCharacter(b []byte) ([]byte, int, error) {
 	// most time is spent inside this function so we should avoid mallocs
 
 	if len(b) == 0 {
-		return nil, 0, ErrNothingToParse
+		return nil, 0, ErrEOF
 	}
 
 	if b[0] == '\\' { // single backslash character
@@ -645,7 +650,7 @@ func ParseEscape(b []byte) (Escape, int, error) {
 	//     'u' hex hex hex hex
 
 	if len(b) == 0 {
-		return nil, 0, ErrNothingToParse
+		return nil, 0, ErrEOF
 	}
 
 SWITCH:
@@ -721,7 +726,7 @@ func ParseDigits(b []byte) (Digits, int, error) {
 	//     digit digits
 
 	if len(b) == 0 {
-		return nil, 0, ErrNothingToParse
+		return nil, 0, ErrEOF
 	}
 
 	// check first digit
