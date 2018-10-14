@@ -2,8 +2,6 @@ package gojson
 
 import (
 	"testing"
-
-	"github.com/jimmyjames85/gojson"
 )
 
 type testCase struct {
@@ -51,13 +49,13 @@ func TestParseSign(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			actual, actualLen := gojson.ParseSign(tc.input)
+			actual, actualLen := ParseSign(tc.input)
 
 			if len(tc.expected) != actualLen {
 				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
 			}
 
-			// byte.Compare
+			// TODO byte.Compare
 			if string(tc.expected) != string(actual) {
 				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
 			}
@@ -101,8 +99,8 @@ func TestParseWhitespace(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			//t.Parallel()
-			actual, actualLen := gojson.ParseWhitespace(tc.input)
+
+			actual, actualLen := ParseWhitespace(tc.input)
 
 			if len(tc.expected) != actualLen {
 				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
@@ -143,7 +141,7 @@ func TestParseDigits(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			//t.Parallel()
-			actual, actualLen, err := gojson.ParseDigits(tc.input)
+			actual, actualLen, err := ParseDigits(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -171,9 +169,14 @@ func TestParseExp(t *testing.T) {
 			expected: []byte(""),
 		},
 		{
-			name:     "e with no sign",
+			name:     "no sign in exp is ok",
+			input:    []byte("e232 jim"),
+			expected: []byte("e232"),
+		},
+		{
+			name:     "e with no sign end of str",
 			input:    []byte("e2432"),
-			expected: []byte(""),
+			expected: []byte("e2432"),
 		},
 		{
 			name:     "e sign no digits",
@@ -200,7 +203,6 @@ func TestParseExp(t *testing.T) {
 			input:    []byte("E-96 foobar"),
 			expected: []byte("E-96"),
 		},
-
 		{
 			name:     "nil input",
 			input:    nil,
@@ -216,7 +218,7 @@ func TestParseExp(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			//t.Parallel()
-			actual, actualLen := gojson.ParseExp(tc.input)
+			actual, actualLen := ParseExp(tc.input)
 
 			if len(tc.expected) != actualLen {
 				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
@@ -272,7 +274,7 @@ func TestParseFrac(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen := gojson.ParseFrac(tc.input)
+			actual, actualLen := ParseFrac(tc.input)
 
 			if len(tc.expected) != actualLen {
 				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
@@ -344,7 +346,7 @@ func TestParseInt(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseInt(tc.input)
+			actual, actualLen, err := ParseInt(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -418,9 +420,9 @@ func TestParseNumber(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:     "decimal bad exp",
+			name:     "decimal no sign in exp is ok",
 			input:    []byte("-0.5e232 jim"),
-			expected: []byte("-0.5"),
+			expected: []byte("-0.5e232"),
 		},
 		{
 			name:     "decimal with exp +",
@@ -452,7 +454,7 @@ func TestParseNumber(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseNumber(tc.input)
+			actual, actualLen, err := ParseNumber(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -500,7 +502,6 @@ func TestParseEscape(t *testing.T) {
 			input:    []byte(`nthis would be on a newline`),
 			expected: []byte(`n`),
 		},
-
 		{
 			name:     "r for caraige return",
 			input:    []byte(`r whatabout linefeed? is that just \n`),
@@ -551,7 +552,7 @@ func TestParseEscape(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseEscape(tc.input)
+			actual, actualLen, err := ParseEscape(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -628,7 +629,7 @@ func TestParseCharacter(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseCharacter(tc.input)
+			actual, actualLen, err := ParseCharacter(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -695,7 +696,7 @@ func TestParseCharacters(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen := gojson.ParseCharacters(tc.input)
+			actual, actualLen := ParseCharacters(tc.input)
 
 			if len(tc.expected) != actualLen {
 				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
@@ -717,7 +718,22 @@ func TestParseString(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "only one quote",
+			name:    "one quote",
+			input:   []byte(`"`),
+			wantErr: true,
+		},
+		{
+			name:     "two quotes",
+			input:    []byte(`""`),
+			expected: []byte(`""`),
+		},
+		{
+			name:    "no empty space allowed",
+			input:   []byte(` "jimbo"`),
+			wantErr: true,
+		},
+		{
+			name:    "beginning quote only",
 			input:   []byte(`"oh we started of soo good`),
 			wantErr: true,
 		},
@@ -762,7 +778,7 @@ func TestParseString(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseString(tc.input)
+			actual, actualLen, err := ParseString(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -825,7 +841,7 @@ func TestParseElement(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseElement(tc.input)
+			actual, actualLen, err := ParseElement(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -893,7 +909,7 @@ func TestParseElements(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseElements(tc.input)
+			actual, actualLen, err := ParseElements(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -972,7 +988,7 @@ func TestParseArray(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseArray(tc.input)
+			actual, actualLen, err := ParseArray(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -1051,7 +1067,7 @@ func TestParseMember(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseMember(tc.input)
+			actual, actualLen, err := ParseMember(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -1124,7 +1140,7 @@ func TestParseMembers(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseMembers(tc.input)
+			actual, actualLen, err := ParseMembers(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")
@@ -1216,7 +1232,131 @@ func TestParseObject(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 
-			actual, actualLen, err := gojson.ParseObject(tc.input)
+			actual, actualLen, err := ParseObject(tc.input)
+
+			if tc.wantErr && err == nil {
+				t.Errorf("expecting error but got <nil>")
+			} else if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %s", err.Error())
+			}
+
+			if len(tc.expected) != actualLen {
+				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
+			}
+
+			// byte.Compare
+			if string(tc.expected) != string(actual) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			}
+		})
+	}
+}
+
+func TestParseBoolean(t *testing.T) {
+	tests := []testCase{
+		{
+			name:     "true",
+			input:    []byte("truesadfdsaf"),
+			expected: []byte("true"),
+		},
+		{
+			name:     "false",
+			input:    []byte("false   no more"),
+			expected: []byte("false"),
+		},
+		{
+			name:    "caps dont work",
+			input:   []byte("TRUE"),
+			wantErr: true,
+		},
+		{
+			name:    "caps dont work: false",
+			input:   []byte("FALSE"),
+			wantErr: true,
+		},
+		{
+			name:     "consume all",
+			input:    []byte("true"),
+			expected: []byte("true"),
+		},
+		{
+			name:    "no leading spaces",
+			input:   []byte("     false"),
+			wantErr: true,
+		},
+		{
+			name:    "nil input",
+			input:   nil,
+			wantErr: true,
+		},
+		{
+			name:    "emtpy slice",
+			input:   []byte{},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+
+			actual, actualLen, err := ParseBoolean(tc.input)
+
+			if tc.wantErr && err == nil {
+				t.Errorf("expecting error but got <nil>")
+			} else if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %s", err.Error())
+			}
+
+			if len(tc.expected) != actualLen {
+				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
+			}
+
+			// byte.Compare
+			if string(tc.expected) != string(actual) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			}
+		})
+	}
+}
+
+func TestParseNull(t *testing.T) {
+	tests := []testCase{
+		{
+			name:     "null",
+			input:    []byte("nullsadfdsaf"),
+			expected: []byte("null"),
+		},
+		{
+			name:    "caps dont work",
+			input:   []byte("NULL"),
+			wantErr: true,
+		},
+		{
+			name:     "consume all",
+			input:    []byte("null"),
+			expected: []byte("null"),
+		},
+		{
+			name:    "no leading spaces",
+			input:   []byte("     null"),
+			wantErr: true,
+		},
+		{
+			name:    "nil input",
+			input:   nil,
+			wantErr: true,
+		},
+		{
+			name:    "emtpy slice",
+			input:   []byte{},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+
+			actual, actualLen, err := ParseNull(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")

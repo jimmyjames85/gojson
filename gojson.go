@@ -3,6 +3,7 @@ package gojson
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"unicode/utf8"
 )
 
@@ -10,16 +11,30 @@ import (
 
 type JsonType int
 
-const (
-	String JsonType = iota
-	Number
-	Object
-	Array
-)
+var (
+	ErrEOF                       = fmt.Errorf("EOf")
+	ErrInvalidCharacter          = fmt.Errorf("invalid character")
+	ErrInvalidDigit              = fmt.Errorf("invalid digit")
+	ErrInvalidNull               = fmt.Errorf("invalid null")
+	ErrInvalidBoolean            = fmt.Errorf("invalid boolean")
+	ErrInvalidEscape             = fmt.Errorf("invalid escape")
+	ErrInvalidCharacterRuneError = fmt.Errorf("invalid character: rune error")
+	ErrInvalidObjectOpen         = fmt.Errorf("invalid object: expecting '{'")
+	ErrInvalidObjectClose        = fmt.Errorf("invalid object: expecting '}'")
+	ErrInvalidMemberMissingSep   = fmt.Errorf("invalid member: expecting ':'")
+	ErrInvalidArrayOpen          = fmt.Errorf("invalid array: expecting '['")
+	ErrInvalidArrayClose         = fmt.Errorf("invalid array: expecting ']'")
+	ErrInvalidStringOpen         = fmt.Errorf(`invalid string: missing beginnig '"'`)
+	ErrInvalidStringClose        = fmt.Errorf(`invalid string: missing ending '"'`)
+	ErrUnexpectedChar            = fmt.Errorf("unexpected char")
+	ErrParseInteger              = fmt.Errorf("parse error: not an integer")
 
-type node struct {
-	parent *node
-}
+	ErrUnsupported = fmt.Errorf("unsupported: should we panic") // todo
+
+	TrueValue  = []byte(`true`)
+	FalseValue = []byte(`false`)
+	NullValue  = []byte(`null`)
+)
 
 func ParseJSON(b []byte) ([]byte, int, error) {
 	// TODO add unit test for this...
@@ -36,27 +51,32 @@ func ParseJSON(b []byte) ([]byte, int, error) {
 
 }
 
-func ParseValue(b []byte) ([]byte, int, error) {
+type Value []byte
+
+// type value needs to indicate object array string number true, false, or null
+func ParseValue(b []byte) (Value, int, error) {
+	// value
+	//     object
+	//     array
+	//     string
+	//     number
+	//     "true"
+	//     "false"
+	//     "null"
+
 	// TODO add unit test for this...
 
 	if len(b) == 0 {
-		return nil, 0, fmt.Errorf("nothing to parse")
+		return nil, 0, ErrEOF
 	}
 
-	if bytes.HasPrefix(b, []byte(`true`)) {
-		return b[:4], 4, nil
-	} else if bytes.HasPrefix(b, []byte(`false`)) {
-		return b[:5], 5, nil
-	} else if bytes.HasPrefix(b, []byte(`null`)) {
-		return b[:4], 4, nil
-	}
+	// TODO is this preformant? we attempt each type and rescan on
+	// failures, see if we can guess which Parse func to call
 
-	_, c, err := ParseNumber(b)
-	if err == nil {
-		return b[:c], c, nil
-	}
+	// TODO order of Parse func matters, e.g. I assume null is not
+	// used frequently so we call it last
 
-	_, c, err = ParseString(b)
+	_, c, err := ParseObject(b)
 	if err == nil {
 		return b[:c], c, nil
 	}
@@ -66,24 +86,77 @@ func ParseValue(b []byte) ([]byte, int, error) {
 		return b[:c], c, nil
 	}
 
-	// TODO this isn't preformant we attempt each type and rescan on failures
-	_, c, err = ParseObject(b)
+	_, c, err = ParseString(b)
 	if err == nil {
 		return b[:c], c, nil
 	}
 
-	return nil, 0, fmt.Errorf("todo: unsported")
+	_, c, err = ParseNumber(b)
+	if err == nil {
+		return b[:c], c, nil
+	}
 
+	_, c, err = ParseBoolean(b)
+	if err == nil {
+		return b[:c], c, nil
+	}
+
+	_, c, err = ParseNull(b)
+	if err == nil {
+		return b[:c], c, nil
+	}
+
+	return nil, 0, ErrUnsupported
 }
 
-func ParseObject(b []byte) ([]byte, int, error) {
+// if a value is null it doesn't give us any information about the type e.g. it could be an array or an object
+//
+// null satisfies both object and array, hence it might be difficult for us to glean the intended underlying type
+type Null []byte
+
+func ParseNull(b []byte) (Null, int, error) {
+	// null is not a json.org 'named' value (such as string or number), but satisfies the "null" value
+	//
+	// null
+	//     "null"
+
+	if len(b) >= len(NullValue) && bytes.Equal(b[0:len(NullValue)], NullValue) {
+		// "null"
+		return b[:len(NullValue)], len(NullValue), nil
+	}
+	return nil, 0, ErrInvalidNull
+}
+
+type Boolean []byte
+
+func ParseBoolean(b []byte) (Boolean, int, error) {
+	// boolean is not a json.org 'named' value (such as string or number), but satisfies the "false" and/or "true" value
+	//
+	// boolean
+	//     "true"
+	//     "false"
+
+	if len(b) >= len(TrueValue) && bytes.Equal(b[0:len(TrueValue)], TrueValue) {
+		// "true"
+		return b[:len(TrueValue)], len(TrueValue), nil
+	} else if len(b) >= len(FalseValue) && bytes.Equal(b[0:len(FalseValue)], FalseValue) {
+		// "false"
+		return b[:len(FalseValue)], len(FalseValue), nil
+	}
+
+	return nil, 0, ErrInvalidBoolean
+}
+
+type Object Value // todo map[string]Element
+
+func ParseObject(b []byte) (Object, int, error) {
 	// object
 	//     '{' ws '}'
 	//     '{' members '}'
 
 	// copy/pasta from ParseArray
 	if len(b) == 0 || b[0] != '{' {
-		return nil, 0, fmt.Errorf("invalid Object: expecting '{'")
+		return nil, 0, ErrInvalidObjectOpen
 	}
 	c := 1 // consume the '{'
 
@@ -95,7 +168,7 @@ func ParseObject(b []byte) ([]byte, int, error) {
 		// we have empty object
 		return b[:c], c, nil
 	}
-	c -= consumed // unconsume whitespace and let it be part of elements
+	c -= consumed // unconsume the whitespace and let it be part of elements
 
 	_, consumed, err := ParseMembers(b[c:])
 	if err != nil {
@@ -109,38 +182,32 @@ func ParseObject(b []byte) ([]byte, int, error) {
 		return b[:c], c, nil
 	}
 
-	return nil, 0, fmt.Errorf("invalid object: expecting '}'")
+	return nil, 0, ErrInvalidObjectClose
 }
 
+// type members   ... this should be map[string] Value
 func ParseMembers(b []byte) ([]byte, int, error) {
 	// members
 	//     member
 	//     member ',' members
-
-	// this is copy/pasta from ParseElements
 
 	_, consumed, err := ParseMember(b)
 	if err != nil {
 		// must parse at least one member
 		return nil, 0, err
 	}
-
 	c := consumed
-	// noMoreToConsume || next unconsumed byte is not ','
-	if len(b[c:]) == 0 || b[c:][0] != ',' {
-		return b[:c], c, nil
-	}
-	c++ // consume the ','
 
-	// TODO what is the recusion limit in go? and will it limit
-	// how many members in a json 'list' we can support
-	_, consumed, err = ParseMembers(b[c:])
-	if err != nil {
-		c-- // don't unconsume the ',' just the first member
-		return b[:c], c, nil
+	//  while there's moreToConsume && the expected delimeter ',' is there...
+	for len(b[c:]) > 0 && b[c:][0] == ',' {
+		c++ // consume the ','
+		_, consumed, err = ParseMember(b[c:])
+		if err != nil {
+			c-- // unconsume the last ','
+			break
+		}
+		c += consumed
 	}
-
-	c += consumed
 	return b[:c], c, nil
 }
 
@@ -162,13 +229,13 @@ func ParseMember(b []byte) ([]byte, int, error) {
 
 	// noMoreToConsume || next unconsumed byte is not ':'  TODO make this if stmt a func... if !nextCharIs(b[c:], ':')
 	if len(b[c:]) == 0 || b[c:][0] != ':' {
-		return nil, 0, fmt.Errorf("expecting ':' %s", b[c:])
+		return nil, 0, ErrInvalidMemberMissingSep
 	}
 	c += 1 // consume the ':'
 
 	_, consumed, err = ParseElement(b[c:])
 	if err != nil {
-		return nil, 0, fmt.Errorf("expecting element")
+		return nil, 0, err
 	}
 	c += consumed
 
@@ -181,7 +248,7 @@ func ParseArray(b []byte) ([]byte, int, error) {
 	//     '[' elements ']'
 
 	if len(b) == 0 || b[0] != '[' {
-		return nil, 0, fmt.Errorf("invalid array: expecting '['")
+		return nil, 0, ErrInvalidArrayOpen
 	}
 	c := 1 // consume the '['
 
@@ -207,10 +274,12 @@ func ParseArray(b []byte) ([]byte, int, error) {
 		return b[:c], c, nil
 	}
 
-	return nil, 0, fmt.Errorf("invalid array: expecting ']'")
+	return nil, 0, ErrInvalidArrayClose
 }
 
-func ParseElements(b []byte) ([]byte, int, error) {
+type Elements []byte // todo this should eventually be []Value
+
+func ParseElements(b []byte) (Elements, int, error) {
 	// elements
 	//     element
 	//     element ',' elements
@@ -220,27 +289,27 @@ func ParseElements(b []byte) ([]byte, int, error) {
 		// must parse at least one element
 		return nil, 0, err
 	}
-
 	c := consumed
-	// noMoreToConsume || next unconsumed byte is not ','
-	if len(b[c:]) == 0 || b[c:][0] != ',' {
-		return b[:c], c, nil
-	}
-	c++ // consume the ','
 
-	// TODO what is the recusion limit in go? and will it limit
-	// how many elements in a json 'list' we can support
-	_, consumed, err = ParseElements(b[c:])
-	if err != nil {
-		c-- // don't unconsume the ',' just the first element
-		return b[:c], c, nil
+	//  while there's moreToConsume && the expected delimeter ',' is there...
+	for len(b[c:]) > 0 && b[c:][0] == ',' {
+		c++ // consume the ','
+		_, consumed, err = ParseElement(b[c:])
+		if err != nil {
+			c-- // unconsume the last ','
+			break
+		}
+		c += consumed
 	}
-
-	c += consumed
 	return b[:c], c, nil
 }
 
-func ParseElement(b []byte) ([]byte, int, error) {
+type Element []byte
+
+func ParseElement(b []byte) (Element, int, error) {
+	// element
+	//     ws value ws
+
 	_, c := ParseWhitespace(b)
 
 	_, consumed, err := ParseValue(b[c:])
@@ -255,18 +324,29 @@ func ParseElement(b []byte) ([]byte, int, error) {
 	return b[:c], c, nil
 }
 
-func ParseString(b []byte) ([]byte, int, error) {
+type String []byte
 
+// String returns the string without the surrounding quotes
+func (s String) String() string {
+	l := len(s)
+	if l < 2 {
+		return ""
+		// this should panic
+	}
+	return string(s[1 : l-1]) // this could get expensive...
+}
+
+func ParseString(b []byte) (String, int, error) {
 	// string
 	//     '"' characters '"'
 
-	if len(b) < 2 {
+	if len(b) == 0 {
 		// need at least two double quotes
-		return nil, 0, fmt.Errorf("nothing to parse")
+		return nil, 0, ErrEOF
 	}
 
 	if b[0] != '"' {
-		return nil, 0, fmt.Errorf("invalid char: expecting quote")
+		return nil, 0, ErrInvalidStringOpen
 	}
 
 	c := 1 // we've consumed the first double quote
@@ -274,14 +354,9 @@ func ParseString(b []byte) ([]byte, int, error) {
 	_, consumed := ParseCharacters(b[c:])
 	c += consumed
 
-	// noMoreToConsume
-	if len(b[c:]) == 0 {
-		return nil, 0, fmt.Errorf("EOF")
-	}
-
-	// next unconsumed byte is not '"'
-	if b[c:][0] != '"' {
-		return nil, 0, fmt.Errorf("invalid char: expecting quote")
+	// noMoreToConsume next unconsumed byte is not '"'
+	if len(b[c:]) == 0 || b[c:][0] != '"' {
+		return nil, 0, ErrInvalidStringClose
 	}
 
 	c += 1 // consume final quote
@@ -289,9 +364,30 @@ func ParseString(b []byte) ([]byte, int, error) {
 	return b[:c], c, nil
 }
 
-func ParseNumber(b []byte) ([]byte, int, error) {
+type Number []byte
+
+func (n Number) Int() (int64, error) {
+	d := bytes.IndexByte(n, '.')
+	if d == -1 {
+		return strconv.ParseInt(string(n), 10, 64)
+	}
+	return 0, ErrParseInteger // TODO is this even being used?
+}
+
+func (n Number) Float64() float64 {
+	ret, err := strconv.ParseFloat(string(n), 64)
+	if err != nil {
+		// then we did not parse digits correctly
+		panic(err) // todo how do return message that makes sense, when we ParsedDigits there was an error that you ignored
+	}
+	return ret
+}
+
+func ParseNumber(b []byte) (Number, int, error) {
 	// number
 	//     int frac exp
+	//
+	// Note int is required, but frac and exp can be empty strings
 
 	_, consumed, err := ParseInt(b)
 	if err != nil {
@@ -308,49 +404,77 @@ func ParseNumber(b []byte) ([]byte, int, error) {
 	return b[:c], c, nil
 }
 
-func ParseInt(b []byte) ([]byte, int, error) {
+type Int []byte
+
+func (i Int) Int() int64 {
+	ret, err := strconv.ParseInt(string(i), 10, 64)
+	if err != nil {
+		// then we did not parse digits correctly
+		panic(err) // or better safe then sorry?... return 0
+		// todo how do return message that makes sense, when you ParsedDigits you got an error that you ignored
+	}
+	return ret
+}
+
+func ParseInt(b []byte) (Int, int, error) {
 	// int
 	//     digit
 	//     onenine digits
 	//     '-' digit
 	//     '-' onenine digits
 
+	// note: int cannot have a '+' sign
+
 	if len(b) == 0 {
-		return nil, 0, fmt.Errorf("nothing to parse")
+		return nil, 0, ErrEOF
 	}
 
 	if b[0] == '0' {
 		return b[:1], 1, nil // digit
 	}
 
+	var c int
 	if IsOneNine(b[0]) {
-		_, consumed, err := ParseDigits(b)
+		_, c, err := ParseDigits(b)
 		if err != nil {
 			return b[:1], 1, nil // digit
 		}
-		return b[:consumed], consumed, nil // onenine digits
+		//todo use c not consumed
+		return b[:c], c, nil // onenine digits
 	}
 
 	if b[0] != '-' {
-		return nil, 0, fmt.Errorf("unexpected char")
+		return nil, 0, ErrUnexpectedChar
 	}
 
 	if len(b) > 1 && b[1] == '-' {
-		return nil, 0, fmt.Errorf("unexpected char")
+		return nil, 0, ErrUnexpectedChar
 	}
 
-	_, consumed, err := ParseInt(b[1:])
+	_, c, err := ParseInt(b[1:])
 	if err != nil {
 		return nil, 0, err
 	}
+	c += 1 // the negative
 
-	consumed += 1 // the negative
-
-	return b[0:consumed], consumed, nil
+	return b[:c], c, nil
 }
 
-func ParseExp(b []byte) ([]byte, int) {
+type Exp []byte
 
+// returns 1 or -1 indicating the sign of the exponent
+func (e Exp) Sign() int {
+	sign, consumed := ParseSign(e)
+	if consumed == 0 {
+		return 1
+	}
+	if sign[0] == '-' {
+		return -1
+	}
+	return 1
+}
+
+func ParseExp(b []byte) (Exp, int) {
 	// exp
 	//     ""
 	//     'E' sign digits
@@ -358,20 +482,16 @@ func ParseExp(b []byte) ([]byte, int) {
 
 	if len(b) == 0 ||
 		(b[0] != 'e' && b[0] != 'E') {
-		return nil, 0
+		return nil, 0 // empty string satisfies exp
 	}
 
 	c := 1 // we've [c]onsumed 'e'
 	_, consumed := ParseSign(b[c:])
-
-	if consumed == 0 {
-		return nil, 0
-	}
 	c += consumed
 
 	_, consumed, err := ParseDigits(b[c:])
 	if err != nil {
-		return nil, 0
+		return nil, 0 // must have valid digits
 	}
 	c += consumed
 
@@ -379,8 +499,11 @@ func ParseExp(b []byte) ([]byte, int) {
 }
 
 // todo rename parse functions to consume and create interface{} Consumer... easier to test
+type Sign []byte
 
-func ParseSign(b []byte) ([]byte, int) {
+func (s Sign) Positive() bool { return len(s) != 1 || s[0] == '+' }
+
+func ParseSign(b []byte) (Sign, int) {
 	// sign
 	//     ""
 	//     '+'
@@ -394,7 +517,25 @@ func ParseSign(b []byte) ([]byte, int) {
 	return b[:1], 1
 }
 
-func ParseFrac(b []byte) ([]byte, int) {
+type Frac []byte
+
+func (f Frac) Float64() float64 {
+	// ParseFrac doesn't return error but can return b=empty string
+	// so this should return 0 for the fraction part
+	if len(f) == 0 {
+		return float64(0)
+	}
+
+	ret, err := strconv.ParseFloat(string(f), 64)
+	if err != nil {
+		// then we did not parse float correctly
+		panic(err)
+	}
+
+	return ret
+}
+
+func ParseFrac(b []byte) (Frac, int) {
 	// frac
 	//     ""
 	//     '.' digits
@@ -404,7 +545,7 @@ func ParseFrac(b []byte) ([]byte, int) {
 	}
 	c := 1 // we've consumed the '.'
 
-	_, consumed, err := ParseDigits(b[c:]) // TODO: think: don't return []byte, just return how much ParseDigit consumed
+	_, consumed, err := ParseDigits(b[c:])
 	if err != nil {
 		return nil, 0
 	}
@@ -425,6 +566,7 @@ func IsOneNine(c byte) bool {
 	//     '1' . '9'
 	return c >= '1' && c <= '9'
 }
+
 func ParseCharacters(b []byte) ([]byte, int) {
 	// characters
 	//     ""
@@ -448,26 +590,31 @@ func ParseCharacters(b []byte) ([]byte, int) {
 	return b[:c], c
 }
 
+// I've made sure that all Parse functions that return *Something doesn't return nil
+// This is a contract that should be documented somewhere. But I wonder, should we
+// return non-pointer... need to see impact on heap vs stack memory allocation, garbage collection, speed
 func ParseCharacter(b []byte) ([]byte, int, error) {
 	// character
 	//     '0020' . '10ffff' - '"' - '\'
 	//     '\' escape
 
+	// most time is spent inside this function so we should avoid mallocs
+
 	if len(b) == 0 {
-		return nil, 0, fmt.Errorf("nothing to parse")
+		return nil, 0, ErrEOF
 	}
 
 	if b[0] == '\\' { // single backslash character
 		_, consumed, err := ParseEscape(b[1:])
 		if err != nil {
-			return nil, 0, fmt.Errorf("invalid character")
+			return nil, 0, ErrInvalidCharacter
 		}
 		consumed += 1 // we consumed the backslash
 		return b[:consumed], consumed, nil
 	}
 
 	if b[0] == '"' {
-		return nil, 0, fmt.Errorf("invalid character")
+		return nil, 0, ErrInvalidCharacter
 	}
 
 	// 0x10ffff overflows the length of a byte
@@ -479,17 +626,19 @@ func ParseCharacter(b []byte) ([]byte, int, error) {
 	// size is the size of the rune in bytes
 
 	if r == utf8.RuneError {
-		return nil, 0, fmt.Errorf("invalid char: Rune Error")
+		return nil, 0, ErrInvalidCharacterRuneError
 	}
 
 	if 0x0020 <= r && r <= 0x10ffff {
 		return b[:size], size, nil
 	}
 
-	return nil, 0, fmt.Errorf("invalid char")
+	return nil, 0, ErrInvalidCharacter
 }
 
-func ParseEscape(b []byte) ([]byte, int, error) {
+type Escape []byte
+
+func ParseEscape(b []byte) (Escape, int, error) {
 	// escape
 	//     '"'
 	//     '\'
@@ -501,7 +650,7 @@ func ParseEscape(b []byte) ([]byte, int, error) {
 	//     'u' hex hex hex hex
 
 	if len(b) == 0 {
-		return nil, 0, fmt.Errorf("nothing to parse")
+		return nil, 0, ErrEOF
 	}
 
 SWITCH:
@@ -521,9 +670,12 @@ SWITCH:
 		return b[:5], 5, nil
 	}
 
-	return nil, 0, fmt.Errorf("Invalid escape")
+	return nil, 0, ErrInvalidEscape
 }
-func ParseWhitespace(b []byte) ([]byte, int) {
+
+type Whitespace []byte
+
+func ParseWhitespace(b []byte) (Whitespace, int) {
 	// ws
 	//     ""
 	//     '0009' ws
@@ -550,21 +702,36 @@ FOR:
 	return b[:n], n
 }
 
+// [wip] Digits satisfies the json.org language spec for both digit and digits
+
+type Digits []byte
+
+func (d Digits) Int() uint64 {
+	// todo is there bytes.parseuint ?
+	ret, err := strconv.ParseUint(string(d), 10, 64)
+	if err != nil {
+		// then we did not parse digits correctly
+		panic(err) // or better safe then sorry?... return 0
+		// todo how do return message that makes sense, when you ParsedDigits you got an error that you ignored
+	}
+	return ret
+}
+
 //  ParseDigits returns b[0:x] such that every ascii value from b[0]
 //  to b[x] represents a digit from 0 to 9, along with the length of b[0:x]
-func ParseDigits(b []byte) ([]byte, int, error) {
+func ParseDigits(b []byte) (Digits, int, error) {
 
 	// digits
 	//     digit
 	//     digit digits
 
 	if len(b) == 0 {
-		return nil, 0, fmt.Errorf("nothing to parse")
+		return nil, 0, ErrEOF
 	}
 
 	// check first digit
 	if !IsDigit(b[0]) {
-		return nil, 0, fmt.Errorf("first byte must be a digit")
+		return nil, 0, ErrInvalidDigit
 	}
 
 	// consume as many digits as possible
