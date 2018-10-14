@@ -9,7 +9,16 @@ import (
 
 // https://www.json.org/
 
-type JsonType int
+type ValueType int
+
+const (
+	ObjectType ValueType = iota
+	ArrayType
+	StringType
+	NumberType
+	BooleanType
+	NullType
+)
 
 var (
 	ErrEOF                       = fmt.Errorf("EOf")
@@ -51,10 +60,13 @@ func ParseJSON(b []byte) ([]byte, int, error) {
 
 }
 
-type Value []byte
+type Value struct {
+	Type ValueType
+	b    []byte
+}
 
 // type value needs to indicate object array string number true, false, or null
-func ParseValue(b []byte) (Value, int, error) {
+func ParseValue(b []byte) ([]byte, int, error) {
 	// value
 	//     object
 	//     array
@@ -147,7 +159,7 @@ func ParseBoolean(b []byte) (Boolean, int, error) {
 	return nil, 0, ErrInvalidBoolean
 }
 
-type Object []Member
+type Object map[string]Element
 
 func ParseObject(b []byte) (Object, int, error) {
 	// object
@@ -185,7 +197,7 @@ func ParseObject(b []byte) (Object, int, error) {
 	return nil, 0, ErrInvalidObjectClose
 }
 
-type Members []Member
+type Members map[string]Element
 
 func ParseMembers(b []byte) (Members, int, error) {
 	// members
@@ -199,8 +211,7 @@ func ParseMembers(b []byte) (Members, int, error) {
 	}
 	c := consumed
 
-	var ret []Member
-	ret = append(ret, first)
+	ret := map[string]Element{string(first.Name): first.Element}
 
 	//  while there's moreToConsume && the expected delimeter ',' is there...
 	for len(b[c:]) > 0 && b[c:][0] == ',' {
@@ -211,13 +222,13 @@ func ParseMembers(b []byte) (Members, int, error) {
 			break
 		}
 		c += consumed
-		ret = append(ret, m)
+		ret[string(m.Name)] = m.Element
 	}
 	return ret, c, nil
 }
 
 type Member struct {
-	Name    []byte
+	Name    []byte // without quotes
 	Element Element
 	b       []byte // underlying bytes
 }
@@ -259,7 +270,9 @@ func ParseMember(b []byte) (Member, int, error) {
 
 }
 
-func ParseArray(b []byte) ([]byte, int, error) {
+type Array []Element
+
+func ParseArray(b []byte) (Array, int, error) {
 	// array
 	//     '[' ws ']'
 	//     '[' elements ']'
@@ -274,12 +287,12 @@ func ParseArray(b []byte) ([]byte, int, error) {
 	c += consumed // consume whitespace
 	if len(b[c:]) > 0 && b[c:][0] == ']' {
 		c++ // consume the ']'
-		// we have empty array
-		return b[:c], c, nil
+		// we have an empty array
+		return nil, c, nil // todo save b[:c] to Array.b, for unit testing/error reporting. We want to have access to original data.
 	}
 	c -= consumed // unconsume whitespace and let it be part of elements
 
-	_, consumed, err := ParseElements(b[c:])
+	elements, consumed, err := ParseElements(b[c:])
 	if err != nil {
 		return nil, 0, err
 	}
@@ -288,40 +301,44 @@ func ParseArray(b []byte) ([]byte, int, error) {
 	if len(b[c:]) > 0 && b[c:][0] == ']' {
 		c++ // consume the ']'
 		// we have non-empty array
-		return b[:c], c, nil
+		return Array(elements), c, nil
 	}
 
 	return nil, 0, ErrInvalidArrayClose
 }
 
-type Elements []byte // todo this should eventually be []Value
+type Elements []Element // todo this should eventually be []Value
 
 func ParseElements(b []byte) (Elements, int, error) {
 	// elements
 	//     element
 	//     element ',' elements
 
-	_, consumed, err := ParseElement(b)
+	first, consumed, err := ParseElement(b)
 	if err != nil {
 		// must parse at least one element
 		return nil, 0, err
 	}
 	c := consumed
 
+	var ret []Element
+	ret = append(ret, first)
+
 	//  while there's moreToConsume && the expected delimeter ',' is there...
 	for len(b[c:]) > 0 && b[c:][0] == ',' {
 		c++ // consume the ','
-		_, consumed, err = ParseElement(b[c:])
+		el, consumed, err := ParseElement(b[c:])
 		if err != nil {
 			c-- // unconsume the last ','
 			break
 		}
 		c += consumed
+		ret = append(ret, el)
 	}
-	return b[:c], c, nil
+	return ret, c, nil
 }
 
-type Element []byte
+type Element []byte // todo remove whitespace
 
 func ParseElement(b []byte) (Element, int, error) {
 	// element

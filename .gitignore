@@ -1,3 +1,6 @@
 flymake_*
 *.test
 *.pdf
+
+# org files
+*.org

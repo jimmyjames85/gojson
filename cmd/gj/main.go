@@ -17,7 +17,10 @@ func main() {
 	silent := len(os.Args) > 1 &&
 		os.Args[1] == "-s"
 
-	iter := 20000
+	iter := 1
+	if silent {
+		iter = 20000
+	}
 	for i := 0; i < iter; i++ {
 
 		b, size, err := gojson.ParseJSON(example)
