@@ -191,8 +191,6 @@ func ParseMembers(b []byte) ([]byte, int, error) {
 	//     member
 	//     member ',' members
 
-	// this is copy/pasta from ParseElements
-
 	_, consumed, err := ParseMember(b)
 	if err != nil {
 		// must parse at least one member
@@ -200,7 +198,7 @@ func ParseMembers(b []byte) ([]byte, int, error) {
 	}
 	c := consumed
 
-	//  while there's moreToConsume && we the expected delimeter ',' is there...
+	//  while there's moreToConsume && the expected delimeter ',' is there...
 	for len(b[c:]) > 0 && b[c:][0] == ',' {
 		c++ // consume the ','
 		_, consumed, err = ParseMember(b[c:])
@@ -291,24 +289,18 @@ func ParseElements(b []byte) (Elements, int, error) {
 		// must parse at least one element
 		return nil, 0, err
 	}
-
 	c := consumed
-	// noMoreToConsume || next unconsumed byte is not ','
-	if len(b[c:]) == 0 || b[c:][0] != ',' {
-		return b[:c], c, nil
+
+	//  while there's moreToConsume && the expected delimeter ',' is there...
+	for len(b[c:]) > 0 && b[c:][0] == ',' {
+		c++ // consume the ','
+		_, consumed, err = ParseElement(b[c:])
+		if err != nil {
+			c-- // unconsume the last ','
+			break
+		}
+		c += consumed
 	}
-	c++ // consume the ','
-
-	// TODO what is the recusion limit in go? and will it limit
-	// how many elements in a json 'list' we can support
-	_, consumed, err = ParseElements(b[c:])
-	if err != nil {
-		c-- // unconsume the ','
-		return b[:c], c, nil
-	}
-
-	c += consumed
-
 	return b[:c], c, nil
 }
 
