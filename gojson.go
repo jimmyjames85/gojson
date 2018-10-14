@@ -200,20 +200,12 @@ func ParseMembers(b []byte) ([]byte, int, error) {
 	}
 	c := consumed
 
-	keepGoing := true // continue to parseMembers
-	for keepGoing {
-		// noMoreToConsume || next unconsumed byte is not ','
-		if len(b[c:]) == 0 || b[c:][0] != ',' {
-			keepGoing = false
-			break
-			// return b[:c], c, nil
-		}
+	//  while there's moreToConsume && we the expected delimeter ',' is there...
+	for len(b[c:]) > 0 && b[c:][0] == ',' {
 		c++ // consume the ','
-
-		_, consumed, err := ParseMember(b[c:])
+		_, consumed, err = ParseMember(b[c:])
 		if err != nil {
 			c-- // unconsume the last ','
-			keepGoing = false
 			break
 		}
 		c += consumed
