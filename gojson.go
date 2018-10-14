@@ -44,6 +44,10 @@ var (
 	ErrParseInteger              = fmt.Errorf("parse error: not an integer")
 
 	ErrUnsupported = fmt.Errorf("unsupported: should we panic") // todo
+
+	TrueValue  = []byte(`true`)
+	FalseValue = []byte(`false`)
+	NullValue  = []byte(`null`)
 )
 
 type Node struct {
@@ -77,12 +81,15 @@ func ParseValue(b []byte) ([]byte, int, error) {
 		return nil, 0, ErrNothingToParse
 	}
 
-	if bytes.HasPrefix(b, []byte(`true`)) {
-		return b[:4], 4, nil
-	} else if bytes.HasPrefix(b, []byte(`false`)) {
-		return b[:5], 5, nil
-	} else if bytes.HasPrefix(b, []byte(`null`)) {
-		return b[:4], 4, nil
+	if bytes.HasPrefix(b, TrueValue) {
+		// "true"
+		return b[:len(TrueValue)], len(TrueValue), nil
+	} else if bytes.HasPrefix(b, FalseValue) {
+		// "false"
+		return b[:len(FalseValue)], len(FalseValue), nil
+	} else if bytes.HasPrefix(b, NullValue) {
+		// "null"
+		return b[:len(NullValue)], len(NullValue), nil
 	}
 
 	_, c, err := ParseNumber(b)
