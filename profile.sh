@@ -1,9 +1,15 @@
 #!/bin/bash
-rm -rf /tmp/profile*
-rm -f ./gj
-go build -o ./gj cmd/gj/main.go
-./gj > /dev/null 2>&1
 
-# echo file is at: $thefile
-# now=`date +%s`
-echo 'go tool pprof --pdf ./gj /tmp/profile.../cpu.pprof > pprof.pdf'
+rm -rf /tmp/profile* # todo maybe dont do this
+
+go build -o ./gj cmd/gj/main.go
+profile=`./gj -s 2>&1 | tail -1 | awk '{print $7}'`
+echo profile: ${profile}
+
+timestamp=`date +%s`
+pprof=${timestamp}_pprof.pdf
+
+go tool pprof --pdf ./gj ${profile} > $pprof
+rm -f ./gj
+
+atril $pprof & disown

@@ -907,8 +907,8 @@ func TestParseElements(t *testing.T) {
 			}
 
 			// byte.Compare
-			if string(tc.expected) != string(actual.b) {
-				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual.b))
+			if string(tc.expected) != string(actual) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
 			}
 		})
 	}
@@ -1218,6 +1218,130 @@ func TestParseObject(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 
 			actual, actualLen, err := ParseObject(tc.input)
+
+			if tc.wantErr && err == nil {
+				t.Errorf("expecting error but got <nil>")
+			} else if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %s", err.Error())
+			}
+
+			if len(tc.expected) != actualLen {
+				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
+			}
+
+			// byte.Compare
+			if string(tc.expected) != string(actual) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			}
+		})
+	}
+}
+
+func TestParseBoolean(t *testing.T) {
+	tests := []testCase{
+		{
+			name:     "true",
+			input:    []byte("truesadfdsaf"),
+			expected: []byte("true"),
+		},
+		{
+			name:     "false",
+			input:    []byte("false   no more"),
+			expected: []byte("false"),
+		},
+		{
+			name:    "caps dont work",
+			input:   []byte("TRUE"),
+			wantErr: true,
+		},
+		{
+			name:    "caps dont work: false",
+			input:   []byte("FALSE"),
+			wantErr: true,
+		},
+		{
+			name:     "consume all",
+			input:    []byte("true"),
+			expected: []byte("true"),
+		},
+		{
+			name:    "no leading spaces",
+			input:   []byte("     false"),
+			wantErr: true,
+		},
+		{
+			name:    "nil input",
+			input:   nil,
+			wantErr: true,
+		},
+		{
+			name:    "emtpy slice",
+			input:   []byte{},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+
+			actual, actualLen, err := ParseBoolean(tc.input)
+
+			if tc.wantErr && err == nil {
+				t.Errorf("expecting error but got <nil>")
+			} else if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %s", err.Error())
+			}
+
+			if len(tc.expected) != actualLen {
+				t.Errorf("unexpected length: wanted %d got %d", len(tc.expected), actualLen)
+			}
+
+			// byte.Compare
+			if string(tc.expected) != string(actual) {
+				t.Errorf("unexpected return: wanted %q got %q", string(tc.expected), string(actual))
+			}
+		})
+	}
+}
+
+func TestParseNull(t *testing.T) {
+	tests := []testCase{
+		{
+			name:     "null",
+			input:    []byte("nullsadfdsaf"),
+			expected: []byte("null"),
+		},
+		{
+			name:    "caps dont work",
+			input:   []byte("NULL"),
+			wantErr: true,
+		},
+		{
+			name:     "consume all",
+			input:    []byte("null"),
+			expected: []byte("null"),
+		},
+		{
+			name:    "no leading spaces",
+			input:   []byte("     null"),
+			wantErr: true,
+		},
+		{
+			name:    "nil input",
+			input:   nil,
+			wantErr: true,
+		},
+		{
+			name:    "emtpy slice",
+			input:   []byte{},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+
+			actual, actualLen, err := ParseNull(tc.input)
 
 			if tc.wantErr && err == nil {
 				t.Errorf("expecting error but got <nil>")

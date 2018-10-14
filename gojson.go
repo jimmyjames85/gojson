@@ -11,26 +11,12 @@ import (
 
 type JsonType int
 
-const (
-	TypeString JsonType = iota
-	TypeNumber
-	TypeObject
-	TypeFrac
-	TypeArray
-	TypeElement
-	TypeElements
-	TypeExp
-	TypeSign
-	TypeDigits
-	TypeInt
-	TypeWhitespace
-	TypeEscape
-)
-
 var (
 	ErrNothingToParse            = fmt.Errorf("nothing to parse")
 	ErrInvalidCharacter          = fmt.Errorf("invalid character")
 	ErrInvalidDigit              = fmt.Errorf("invalid digit")
+	ErrInvalidNull               = fmt.Errorf("invalid null")
+	ErrInvalidBoolean            = fmt.Errorf("invalid boolean")
 	ErrInvalidEscape             = fmt.Errorf("invalid escape")
 	ErrInvalidCharacterRuneError = fmt.Errorf("invalid character: rune error")
 	ErrInvalidObjectOpen         = fmt.Errorf("invalid object: expecting '{'")
@@ -50,15 +36,6 @@ var (
 	NullValue  = []byte(`null`)
 )
 
-type Node struct {
-	Type     JsonType
-	Parent   *Node
-	Children []*Node
-
-	b []byte // underlying data
-	// Value  fmt.Stringer
-}
-
 func ParseJSON(b []byte) ([]byte, int, error) {
 	// TODO add unit test for this...
 
@@ -74,6 +51,7 @@ func ParseJSON(b []byte) ([]byte, int, error) {
 
 }
 
+// type value needs to indicate object array string number true, false, or null
 func ParseValue(b []byte) ([]byte, int, error) {
 	// TODO add unit test for this...
 
@@ -81,23 +59,13 @@ func ParseValue(b []byte) ([]byte, int, error) {
 		return nil, 0, ErrNothingToParse
 	}
 
-	if bytes.HasPrefix(b, TrueValue) {
-		// "true"
-		return b[:len(TrueValue)], len(TrueValue), nil
-	} else if bytes.HasPrefix(b, FalseValue) {
-		// "false"
-		return b[:len(FalseValue)], len(FalseValue), nil
-	} else if bytes.HasPrefix(b, NullValue) {
-		// "null"
-		return b[:len(NullValue)], len(NullValue), nil
-	}
+	// TODO is this preformant? we attempt each type and rescan on
+	// failures, see if we can guess which Parse func to call
 
-	_, c, err := ParseNumber(b)
-	if err == nil {
-		return b[:c], c, nil
-	}
+	// TODO order of Parse func matters, e.g. I assume null is not
+	// used frequently so we call it last
 
-	_, c, err = ParseString(b)
+	_, c, err := ParseObject(b)
 	if err == nil {
 		return b[:c], c, nil
 	}
@@ -107,13 +75,65 @@ func ParseValue(b []byte) ([]byte, int, error) {
 		return b[:c], c, nil
 	}
 
-	// TODO this isn't preformant we attempt each type and rescan on failures
-	_, c, err = ParseObject(b)
+	_, c, err = ParseString(b)
+	if err == nil {
+		return b[:c], c, nil
+	}
+
+	_, c, err = ParseNumber(b)
+	if err == nil {
+		return b[:c], c, nil
+	}
+
+	_, c, err = ParseBoolean(b)
+	if err == nil {
+		return b[:c], c, nil
+	}
+
+	_, c, err = ParseNull(b)
 	if err == nil {
 		return b[:c], c, nil
 	}
 
 	return nil, 0, ErrUnsupported
+}
+
+// if a value is null it doesn't give us any information about the type e.g. it could be an array or an object
+//
+// null satisfies both object and array, hence it might be difficult for us to glean the intended underlying type
+type Null []byte
+
+func ParseNull(b []byte) (Null, int, error) {
+	// null is not a json.org 'named' value (such as string or number), but satisfies the "null" value
+	//
+	// null
+	//     "null"
+
+	if len(b) >= len(NullValue) && bytes.Equal(b[0:len(NullValue)], NullValue) {
+		// "null"
+		return b[:len(NullValue)], len(NullValue), nil
+	}
+	return nil, 0, ErrInvalidNull
+}
+
+type Boolean []byte
+
+func ParseBoolean(b []byte) (Boolean, int, error) {
+	// boolean is not a json.org 'named' value (such as string or number), but satisfies the "false" and/or "true" value
+	//
+	// boolean
+	//     "true"
+	//     "false"
+
+	if len(b) >= len(TrueValue) && bytes.Equal(b[0:len(TrueValue)], TrueValue) {
+		// "true"
+		return b[:len(TrueValue)], len(TrueValue), nil
+	} else if len(b) >= len(FalseValue) && bytes.Equal(b[0:len(FalseValue)], FalseValue) {
+		// "false"
+		return b[:len(FalseValue)], len(FalseValue), nil
+	}
+
+	return nil, 0, ErrInvalidBoolean
 }
 
 func ParseObject(b []byte) ([]byte, int, error) {
@@ -152,6 +172,7 @@ func ParseObject(b []byte) ([]byte, int, error) {
 	return nil, 0, ErrInvalidObjectClose
 }
 
+// type members   ... this should be map[string] Value
 func ParseMembers(b []byte) ([]byte, int, error) {
 	// members
 	//     member
@@ -250,29 +271,23 @@ func ParseArray(b []byte) ([]byte, int, error) {
 	return nil, 0, ErrInvalidArrayClose
 }
 
-type Elements struct{ Node }
+type Elements []byte // todo this should eventually be []Value
 
-func ParseElements(b []byte) (*Elements, int, error) {
+func ParseElements(b []byte) (Elements, int, error) {
 	// elements
 	//     element
 	//     element ',' elements
 
-	ret := &Elements{Node: Node{
-		Type:   TypeElements,
-		Parent: nil, //todo
-	}}
-
 	_, consumed, err := ParseElement(b)
 	if err != nil {
 		// must parse at least one element
-		return ret, 0, err
+		return nil, 0, err
 	}
 
 	c := consumed
 	// noMoreToConsume || next unconsumed byte is not ','
 	if len(b[c:]) == 0 || b[c:][0] != ',' {
-		ret.b = b[:c]
-		return ret, c, nil
+		return b[:c], c, nil
 	}
 	c++ // consume the ','
 
@@ -281,14 +296,12 @@ func ParseElements(b []byte) (*Elements, int, error) {
 	_, consumed, err = ParseElements(b[c:])
 	if err != nil {
 		c-- // unconsume the ','
-		ret.b = b[:c]
-		return ret, c, nil
+		return b[:c], c, nil
 	}
 
 	c += consumed
 
-	ret.b = b[:c]
-	return ret, c, nil
+	return b[:c], c, nil
 }
 
 type Element []byte
