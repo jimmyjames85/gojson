@@ -147,7 +147,7 @@ func ParseBoolean(b []byte) (Boolean, int, error) {
 	return nil, 0, ErrInvalidBoolean
 }
 
-type Object Value // todo map[string]Element
+type Object []Member
 
 func ParseObject(b []byte) (Object, int, error) {
 	// object
@@ -166,11 +166,11 @@ func ParseObject(b []byte) (Object, int, error) {
 	if len(b[c:]) > 0 && b[c:][0] == '}' {
 		c++ // consume the '}'
 		// we have empty object
-		return b[:c], c, nil
+		return nil, c, nil
 	}
-	c -= consumed // unconsume the whitespace and let it be part of elements
+	c -= consumed // unconsume the whitespace and let it be part of members
 
-	_, consumed, err := ParseMembers(b[c:])
+	members, consumed, err := ParseMembers(b[c:])
 	if err != nil {
 		return nil, 0, err
 	}
@@ -179,48 +179,59 @@ func ParseObject(b []byte) (Object, int, error) {
 	if len(b[c:]) > 0 && b[c:][0] == '}' {
 		c++ // consume the '}'
 		// we have non-empty object
-		return b[:c], c, nil
+		return Object(members), c, nil
 	}
 
 	return nil, 0, ErrInvalidObjectClose
 }
 
-// type members   ... this should be map[string] Value
-func ParseMembers(b []byte) ([]byte, int, error) {
+type Members []Member
+
+func ParseMembers(b []byte) (Members, int, error) {
 	// members
 	//     member
 	//     member ',' members
 
-	_, consumed, err := ParseMember(b)
+	first, consumed, err := ParseMember(b)
 	if err != nil {
 		// must parse at least one member
 		return nil, 0, err
 	}
 	c := consumed
 
+	var ret []Member
+	ret = append(ret, first)
+
 	//  while there's moreToConsume && the expected delimeter ',' is there...
 	for len(b[c:]) > 0 && b[c:][0] == ',' {
 		c++ // consume the ','
-		_, consumed, err = ParseMember(b[c:])
+		m, consumed, err := ParseMember(b[c:])
 		if err != nil {
 			c-- // unconsume the last ','
 			break
 		}
 		c += consumed
+		ret = append(ret, m)
 	}
-	return b[:c], c, nil
+	return ret, c, nil
 }
 
-func ParseMember(b []byte) ([]byte, int, error) {
+type Member struct {
+	Name    []byte
+	Element Element
+	b       []byte // underlying bytes
+}
+
+func ParseMember(b []byte) (Member, int, error) {
 	// member
 	//     ws string ws ':' element
 
 	_, consumed := ParseWhitespace(b)
 	c := consumed
 
-	_, consumed, err := ParseString(b[c:])
+	name, consumed, err := ParseString(b[c:])
 	if err != nil {
-		return nil, 0, err
+		return Member{}, 0, err
 	}
 	c += consumed
 
@@ -229,17 +240,23 @@ func ParseMember(b []byte) ([]byte, int, error) {
 
 	// noMoreToConsume || next unconsumed byte is not ':'  TODO make this if stmt a func... if !nextCharIs(b[c:], ':')
 	if len(b[c:]) == 0 || b[c:][0] != ':' {
-		return nil, 0, ErrInvalidMemberMissingSep
+		return Member{}, 0, ErrInvalidMemberMissingSep
 	}
 	c += 1 // consume the ':'
 
-	_, consumed, err = ParseElement(b[c:])
+	element, consumed, err := ParseElement(b[c:])
 	if err != nil {
-		return nil, 0, err
+		return Member{}, 0, err
 	}
 	c += consumed
 
-	return b[:c], c, nil
+	ret := Member{
+		Name:    name.WithoutQuotes(),
+		Element: element,
+		b:       b[:c],
+	}
+	return ret, c, nil
+
 }
 
 func ParseArray(b []byte) ([]byte, int, error) {
@@ -327,13 +344,13 @@ func ParseElement(b []byte) (Element, int, error) {
 type String []byte
 
 // String returns the string without the surrounding quotes
-func (s String) String() string {
+func (s String) WithoutQuotes() []byte {
 	l := len(s)
 	if l < 2 {
-		return ""
-		// this should panic
+		return nil
+		// should this panic?
 	}
-	return string(s[1 : l-1]) // this could get expensive...
+	return s[1 : l-1]
 }
 
 func ParseString(b []byte) (String, int, error) {
