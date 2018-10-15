@@ -120,6 +120,34 @@ func (v *Value) IsNull() bool {
 	return isnull
 }
 
+// Depth First Walk
+func (v *Value) Walk(fn func(string, Value)) {
+	v.dwalk("", fn)
+}
+
+// depth first Walk
+func (v *Value) dwalk(prefix string, fn func(string, Value)) {
+
+	delim := "." // TODO have delimeter passed in / configurable... make parsing easier for calling function
+	if len(prefix) == 0 {
+		delim = ""
+	}
+
+	switch v.typ {
+	case ObjectType:
+		for k, val := range v.Object() {
+			//todo use bytes.buffer? how to avoid fmt.Sprintf
+			val.dwalk(fmt.Sprintf("%s%s%s", prefix, delim, k), fn)
+		}
+	case ArrayType:
+		for i, val := range v.Array() {
+			val.dwalk(fmt.Sprintf("%s%s%d", prefix, delim, i), fn)
+		}
+	case StringType, NumberType, BooleanType, NullType:
+		fn(prefix, *v)
+	}
+}
+
 // type value needs to indicate object array string number true, false, or null
 func ParseValue(b []byte) (Value, int, error) {
 	// value

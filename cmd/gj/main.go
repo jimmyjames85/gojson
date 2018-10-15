@@ -9,49 +9,13 @@ import (
 	"github.com/pkg/profile"
 )
 
-// todo move this into gojson package...
-func Walk(prefix string, v gojson.Value) {
-
-	switch v.Type() {
-	case gojson.ObjectType:
-		val := v.Object()
-		for k, v := range val {
-			prfx := fmt.Sprintf("%s:%s", prefix, k)
-			fmt.Printf("%s\n", prfx)
-			Walk(prfx, v)
-		}
-	case gojson.ArrayType:
-		val := v.Array()
-		for _, v := range val {
-			// todo decend into object if it is one...
-			prfx := fmt.Sprintf("%s:%s", prefix, v.B())
-			fmt.Printf("%s\n", prfx)
-			Walk(prfx, v)
-		}
-	case gojson.StringType:
-	case gojson.NumberType:
-	case gojson.BooleanType:
-	case gojson.NullType:
-	}
-}
-
 func traverse(byts []byte) {
 	j, err := gojson.ParseJSON(byts)
 	must.BeNil(err)
-	fmt.Printf("%s: %d\n", j.Type(), len(j.B()))
 
-	arr := j.Array()
-	if arr == nil {
-		fmt.Printf("not an array maybe? I didn't check tht ey  type ... shame: %s\n", j.Type())
-		return
-	}
-
-	for _, val := range arr {
-		fmt.Printf("%s: %d\n", val.Type(), len(val.B()))
-		Walk("", val)
-		fmt.Printf("\n\n")
-	}
-
+	j.Walk(func(path string, val gojson.Value) {
+		fmt.Printf("%s: %s\n", path, val.Type())
+	})
 }
 
 func main() {
