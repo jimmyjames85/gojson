@@ -18,6 +18,8 @@ func traverse(byts []byte) {
 	})
 }
 
+// TODO: For testing look into: https://github.com/zemirco/sf-city-lots-json/blob/master/citylots.json
+
 func main() {
 
 	example := must.ReadFile("example.json")
